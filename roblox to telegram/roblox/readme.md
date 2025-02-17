@@ -1,5 +1,3 @@
-
----
 - **localscript.lua**  
   does the client-side logic for generating and verifying the code
 
