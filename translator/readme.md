@@ -8,9 +8,9 @@ a translator script that lets you translate your outgoing, and incoming messages
 ## tutorial
 
 - **usage:**
-- - execute via ``loadstring(game:HttpGet('https://raw.githubusercontent.com/ancestrychanged/public/main/translator/translator.lua'))()``
-  inside the chat window, type the language code you want to translate your message to, followed by your query (note: use the language code, **not** the language name)  
-  a full list of language codes (with linked languages) can be found [here](https://localizely.com/iso-639-1-list/)
+  - execute via ``loadstring(game:HttpGet('https://raw.githubusercontent.com/ancestrychanged/public/main/translator/translator.lua'))()``
+- inside the chat window, type the language code you want to translate your message to, followed by your query (note: use the language code, **not** the language name)  
+- a full list of language codes (with linked languages) can be found [here](https://localizely.com/iso-639-1-list/)
 
 ### examples
 
