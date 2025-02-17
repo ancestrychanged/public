@@ -16,4 +16,3 @@
 
 - **token.txt**  
   holds your telegram bot token (keep this file private)
----
