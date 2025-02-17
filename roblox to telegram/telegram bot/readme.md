@@ -1,4 +1,3 @@
----
 - **commands/**  
   contains individual command modules (e.g., `/verify`, `/help`) that the bot can execute
 
