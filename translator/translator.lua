@@ -284,7 +284,7 @@ if oldSystemRemoveWhitespaceWarning then
 			if v:IsA("Frame") then
 				local textLabel = v:FindFirstChildOfClass("TextLabel")
 				if textLabel and textLabel.Text == "Your message contains whitespace that is not allowed." then
-					task.wait(1 / workspace:GetRealPhysicsFPS()) -- removing this will make the chat ugly
+					task.wait(1 / 60) -- removing this will make the chat ugly
 					v:Destroy()
 				end
 			end
