@@ -1,5 +1,6 @@
-
 # translator script
+
+> this script will only work if executed inside a level-8 roblox exploit</spoiler>
 
 a translator script that lets you translate your outgoing, and incoming messages into the chat
 
