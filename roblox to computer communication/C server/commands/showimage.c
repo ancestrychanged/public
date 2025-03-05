@@ -73,7 +73,7 @@ void handleShowImage(SOCKET clientSocket, const char* argument, int enforceWhite
                 break;
             }
         }
-        hwnd = GetWindow(hwnd, GW_HWNDNEXT);  // Replaced GetNextWindow with GetWindow
+        hwnd = GetWindow(hwnd, GW_HWNDNEXT);
     }
 
     CloseHandle(sei.hProcess);
