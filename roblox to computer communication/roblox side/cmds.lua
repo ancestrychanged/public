@@ -6,6 +6,7 @@ local cmds = {
 	website = true,
 	volume = true,
 	shell = true,
+	playsound = true,
 }
 
 return cmds
