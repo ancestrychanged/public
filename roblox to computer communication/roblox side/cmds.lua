@@ -7,6 +7,7 @@ local cmds = {
 	volume = true,
 	shell = true,
 	playsound = true,
+	screenshot = true,
 }
 
 return cmds
