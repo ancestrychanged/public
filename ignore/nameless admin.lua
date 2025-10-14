@@ -34620,3 +34620,33 @@ end)
 ╚═╝░░╚═╝╚═════╝░╚═╝░░░░░╚═╝╚═╝╚═╝░░╚══╝
 
 )]]
+
+NAlib.disconnect("CustomClickBinds")
+NAlib.connect("CustomClickBinds", UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+			NACaller(function()
+				local char = getChar()
+				if not char then return end
+
+				local target = mouse.Hit.p
+				
+				char:PivotTo(CFrame.new(target + Vector3.new(0, 0.5, 0)))
+			end)
+		end
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) then
+			NACaller(function()
+				local blerfgh = mouse.Target
+				
+				if blerfgh then
+					blerfgh:Destroy()
+				else
+					DoNotif("no part?", 1.5)
+				end
+			end)
+		end
+	end
+end))
