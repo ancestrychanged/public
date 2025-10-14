@@ -34633,7 +34633,7 @@ NAlib.connect("CustomClickBinds", UserInputService.InputBegan:Connect(function(i
 
 				local target = mouse.Hit.p
 				
-				char:PivotTo(CFrame.new(target + Vector3.new(0, 0.5, 0)))
+				char:PivotTo(CFrame.new(target + Vector3.new(0, 4, 0)))
 			end)
 		end
 
