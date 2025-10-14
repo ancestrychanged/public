@@ -409,7 +409,7 @@ Main = (function()
 	Main.LoadModule = function(name)
         -- :(
 		local urls = {
-			Lib = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/dexlibfallback.lua",
+			Lib = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Lib.lua",
 			Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Explorer.lua",
 			Properties = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Properties.lua",
 			ScriptViewer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/ScriptViewer.lua",
