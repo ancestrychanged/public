@@ -23457,7 +23457,7 @@ end)
 
 -- running this twice may lead to a crash (this shit is a bit broken idfk why)
 cmd.add({"sigmaspy", "sspy","superspy"},{"sigmaspy","the strongest RemoteSpy able to detect (RemoteEvent/Function - BindableEvent/Function - OnClientEvent/OnClientInvoke) and can detect remotes that were fired from Actors"},function()
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/depthso/Sigma-Spy/refs/heads/main/Main.lua"))()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/ancestrychanged/sigma-spy-before-the-change/refs/heads/main/Main.lua"))()
 end)
 
 cmd.add({"gravity","grav"},{"gravity <amount> (grav)","sets game gravity to whatever u want"},function(...)
