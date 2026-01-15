@@ -31,8 +31,10 @@
 <!-- about the project -->
 ## about the project
 
-short version of the doc
+short version of the doc;
+
 mainly describes my visualization for "bot vs bAIcon" combat animation
+
 animation will use gear interactions (bloxy cola, subspace tripmine, rainbow carpet) combined with script execution visualizations to bridge the gap between gameplay logic and cinematic animation
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
