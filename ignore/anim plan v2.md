@@ -73,7 +73,7 @@ animation will use gear interactions (bloxy cola, subspace tripmine, rainbow car
 
 | timestamp (approx) | action / event | detailed breakdown |
 | :--- | :--- | :--- |
-| `[0:00-0:05]` | **destructive entry** | bot falls from sky (terminal velocity). lands with tremendous impact (camera shake + debris). shockwave causes pillars to erupt randomly from baseplate. bacon is startled, a bit knockebacked by the force |
+| `[0:00-0:05]` | **destructive entry** | bot falls from sky (terminal velocity). lands with tremendous impact (camera shake + debris). shockwave causes pillars to erupt randomly from baseplate. bacon is startled, a bit knocked back by the force |
 | `[0:05-0:11]` | **bot initialization** | bot summons holographic console. **action:** types code, executes `loadstring(game:HttpGet("https://ancestrychanged.fun/healthbar.lua"))()`. custom health gui appears (bot has gradient boss bar, both start at 100 hp). bot stomps on ground -> pillars spawn procedurally. camera cuts to bacon |
 | `[0:11-0:14]` | **gear prep** | bacon notices health bar. looks right to toolbox. grabs **bloxy cola** -> drinks -> gains "buff" (visible muscle expansion + speed particles). grabs **sword** & **subspace tripmine** |
 | `[0:14-0:16]` | **the trap** | bacon runs/jumps at bot. triggers tripmine, throws it. bot catches it (animation implies he thinks it's a baseball). mine detonates in hands. **vfx:** map flashes red/purple (blind/stun effect) |
