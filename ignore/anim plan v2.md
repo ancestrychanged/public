@@ -73,14 +73,14 @@ animation will use gear interactions (bloxy cola, subspace tripmine, rainbow car
 
 | timestamp (approx) | action / event | detailed breakdown |
 | :--- | :--- | :--- |
-| `[0:00-0:03]` | **bacon idle** | bacon is laying down on the baseplate. **action:** scratches head, performs small idle movements. stands up, looks into the distance, spots bot approaching. |
-| `[0:03-0:11]` | **bot initialization** | bot summons holographic console. **action:** types code, executes `loadstring(game:HttpGet("https://ancestrychanged.fun/healthbar.lua"))()`. custom health gui appears (bot has gradient boss bar, both start at 100 hp). bot stomps on ground -> pillars spawn procedurally. camera cuts to bacon. |
-| `[0:11-0:14]` | **gear prep** | bacon notices health bar. looks right to toolbox. grabs **bloxy cola** -> drinks -> gains "buff" (visible muscle expansion + speed particles). grabs **sword** & **subspace tripmine**. |
-| `[0:14-0:16]` | **the trap** | bacon runs/jumps at bot. triggers tripmine, throws it. bot catches it (animation implies he thinks it's a baseball). mine detonates in hands. **vfx:** map flashes red/purple (blind/stun effect). |
-| `[0:16-0:18]` | **the combo** | while bot is stunned, bacon lands 4 rapid sword strikes (speed buffed). **damage:** weak/chip damage only (bot hp: 100 -> 99.8). |
-| `[0:18-0:19]` | **the counter** | bot recovers instantly. blocks final strike with arm. throws sword out of bacon's hand. lands heavy punch. **damage:** bacon hp drops 200 -> 130. bacon flies backwards towards a pillar. |
-| `[0:19-0:24]` | **shadowstep** | bot engages "saitama vs boros" speed ([reference](https://youtu.be/54Td5wxNDpo?list=RD54Td5wxNDpo&t=51)). chases bacon mid-air. executes shadowstep sequence: 9 hits from alternating directions over ~5 seconds. |
-| `[0:24-0:25]` | **the finisher** | 10th hit: bot grabs bacon, spins him around mid-air, throws him into the ground. **damage:** bacon hp critical (20/200). impact debris. |
+| `[0:00-0:05]` | **destructive entry** | bot falls from sky (terminal velocity). lands with tremendous impact (camera shake + debris). shockwave causes pillars to erupt randomly from baseplate. bacon is startled, a bit knockebacked by the force |
+| `[0:05-0:11]` | **bot initialization** | bot summons holographic console. **action:** types code, executes `loadstring(game:HttpGet("https://ancestrychanged.fun/healthbar.lua"))()`. custom health gui appears (bot has gradient boss bar, both start at 100 hp). bot stomps on ground -> pillars spawn procedurally. camera cuts to bacon |
+| `[0:11-0:14]` | **gear prep** | bacon notices health bar. looks right to toolbox. grabs **bloxy cola** -> drinks -> gains "buff" (visible muscle expansion + speed particles). grabs **sword** & **subspace tripmine** |
+| `[0:14-0:16]` | **the trap** | bacon runs/jumps at bot. triggers tripmine, throws it. bot catches it (animation implies he thinks it's a baseball). mine detonates in hands. **vfx:** map flashes red/purple (blind/stun effect) |
+| `[0:16-0:18]` | **the combo** | while bot is stunned, bacon lands 4 rapid sword strikes (speed buffed). **damage:** weak/chip damage only (bot hp: 100 -> 99.8) |
+| `[0:18-0:19]` | **the counter** | bot recovers instantly. blocks final strike with arm. throws sword out of bacon's hand. lands heavy punch. **damage:** bacon hp drops 200 -> 130. bacon flies backwards towards a pillar |
+| `[0:19-0:24]` | **shadowstep** | bot engages "saitama vs boros" speed ([reference](https://youtu.be/54Td5wxNDpo?list=RD54Td5wxNDpo&t=51)). chases bacon mid-air. executes shadowstep sequence: 9 hits from alternating directions over ~5 seconds |
+| `[0:24-0:25]` | **the finisher** | 10th hit: bot grabs bacon, spins him around mid-air, throws him into the ground. **damage:** bacon hp critical (20/200). impact debris |
 | `[0:25-0:31]` | **escape & clutch** | bacon recovers (approx 6s sequence). grabs rainbow magic carpet. attempts to fly right. grabs bloxy cola #2. bot intercepts flight, punches down (hp 130 -> 90). bacon finishes drink frame-perfectly (full heal). **barely** dodges final impact (200 -> 195). lands in crouch, to the left of the bot |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
