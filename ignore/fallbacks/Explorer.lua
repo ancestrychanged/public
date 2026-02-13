@@ -1404,69 +1404,18 @@ local function main()
 				return nil
 			end
 
-			local window = Lib.Window.new()
-			window:SetTitle("Xrefs: " .. tostring(target) .. " (scanning...)")
-			window:Resize(420, 320)
-			window.MinX = 250
-			window.MinY = 120
-
-			local content = window.GuiElems.Content
-
-			local statusLabel = createSimple("TextLabel", {
-				Parent = content,
-				BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-				BorderSizePixel = 0,
-				Position = UDim2.new(0, 0, 0, 1),
-				Size = UDim2.new(1, 0, 0, 20),
-				Font = Enum.Font.SourceSans,
-				Text = "  Scanning...",
-				TextColor3 = Color3.fromRGB(200, 200, 200),
-				TextSize = 13,
-				TextXAlignment = Enum.TextXAlignment.Left
-			})
-
-			local copyBtn = createSimple("TextButton", {
-				Parent = statusLabel,
-				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
-				BorderSizePixel = 0,
-				Position = UDim2.new(1, -55, 0, 2),
-				Size = UDim2.new(0, 52, 0, 16),
-				Font = Enum.Font.SourceSans,
-				Text = "Copy All",
-				TextColor3 = Color3.fromRGB(200, 200, 200),
-				TextSize = 12,
-				AutoButtonColor = false
-			})
-
-			Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 3)
-			Lib.ButtonAnim(copyBtn, {Mode = 2})
-
-			local scrollFrame = createSimple("ScrollingFrame", {
-				Parent = content,
-				BackgroundTransparency = 1,
-				BorderSizePixel = 0,
-				Position = UDim2.new(0, 0, 0, 22),
-				Size = UDim2.new(1, 0, 1, -22),
-				CanvasSize = UDim2.new(0, 0, 0, 0),
-				ScrollBarThickness = 5,
-				ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80),
-				ClipsDescendants = true
-			})
-			Instance.new("UIListLayout", scrollFrame).SortOrder = Enum.SortOrder.LayoutOrder
-
-			window:ShowAndFocus()
-
-			local resultBuffer = {}
-			local copyLines = {}
-			local resultCount = 0
-			local rendered = 0
-			local scanning = true
-			local RENDER_PER_FRAME = 10
-
+			local results = {}
 			local visited = {}
-			local MAX_DEPTH = 2
-			local scanOps = 0
-			local SCAN_BUDGET = 5000
+			local MAX_DEPTH = 8
+
+			local function addResult(source, path, value, funcInfo)
+				results[#results + 1] = {
+					Source = source,
+					Path = path,
+					Value = value,
+					FuncInfo = funcInfo
+				}
+			end
 
 			local function getFuncInfo(fn)
 				local ok, info = pcall(debug.getinfo, fn, "s")
@@ -1478,19 +1427,7 @@ local function main()
 				return nil
 			end
 
-			local function addResult(source, path, value, funcInfo)
-				resultCount = resultCount + 1
-				resultBuffer[resultCount] = {
-					Source = source,
-					Path = path,
-					Value = value,
-					FuncInfo = funcInfo
-				}
-			end
-
 			local function scanValue(val, source, path, depth)
-				scanOps = scanOps + 1
-				if scanOps > SCAN_BUDGET then return end
 				if depth > MAX_DEPTH then return end
 				if val == target then
 					addResult(source, path, val, nil)
@@ -1500,8 +1437,6 @@ local function main()
 					if visited[val] then return end
 					visited[val] = true
 					for k, v in pairs(val) do
-						scanOps = scanOps + 1
-						if scanOps > SCAN_BUDGET then break end
 						local kStr = tostring(k)
 						if v == target then
 							addResult(source, path .. "[" .. kStr .. "]", v, nil)
@@ -1537,268 +1472,169 @@ local function main()
 				end
 			end
 
-			local topIter = 0
-			local function topYield()
-				topIter = topIter + 1
-				if topIter % 50 == 0 then
-					task.wait()
+			--[[
+			pcall(function()
+				local reg = getreg()
+				for i, v in pairs(reg) do
+					scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
+				end
+			end)
+			]]
+
+			pcall(function()
+				local gc = getgc(true)
+				for i, v in ipairs(gc) do
+					scanValue(v, "getgc", "gc[" .. i .. "]", 0)
+				end
+			end)
+
+			if getconnections then
+				local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "AncestryChanged", "Destroying"}
+				for _, sigName in ipairs(signalNames) do
+					pcall(function()
+						local signal = target[sigName]
+						if signal then
+							local conns = getconnections(signal)
+							for ci, conn in ipairs(conns) do
+								local fi = conn.Function and getFuncInfo(conn.Function) or nil
+								addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
+							end
+						end
+					end)
 				end
 			end
 
-			local renderCon
-			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
-				if not scrollFrame.Parent then
-					renderCon:Disconnect()
-					return
-				end
-
-				local batch = 0
-				while rendered < resultCount and batch < RENDER_PER_FRAME do
-					rendered = rendered + 1
-					batch = batch + 1
-					local i = rendered
-					local res = resultBuffer[i]
-
-					local displayText = "[" .. res.Source .. "] " .. res.Path
-					if res.FuncInfo then
-						displayText = displayText .. "  (" .. res.FuncInfo .. ")"
+			pcall(function()
+				local threads = _getallthreads()
+				for ti, thread in ipairs(threads) do
+					local ok, tEnv = pcall(getfenv, thread)
+					if ok and type(tEnv) == "table" then
+						scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
 					end
-					copyLines[i] = displayText
-
-					local isInstance = typeof(res.Value) == "Instance"
-					local entry = createSimple("TextButton", {
-						Parent = scrollFrame,
-						BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
-						BackgroundTransparency = 0,
-						BorderSizePixel = 0,
-						Size = UDim2.new(1, 0, 0, 20),
-						Font = Enum.Font.Code,
-						Text = "  " .. displayText,
-						TextColor3 = isInstance and Color3.fromRGB(130, 190, 255) or Color3.fromRGB(190, 190, 190),
-						TextSize = 12,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						AutoButtonColor = false,
-						LayoutOrder = i,
-						TextTruncate = Enum.TextTruncate.AtEnd
-					})
-
-					entry.MouseEnter:Connect(function()
-						entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-					end)
-					entry.MouseLeave:Connect(function()
-						entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
-					end)
-
-					if isInstance then
-						local inst = res.Value
-						entry.MouseButton1Click:Connect(function()
-							if nodes[inst] then
-								selection:Set(nodes[inst])
-								Explorer.ViewNode(nodes[inst])
-							end
-						end)
-					end
-				end
-
-				if batch > 0 then
-					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, rendered * 20)
-					statusLabel.Text = "  " .. rendered .. " reference(s) found" .. (scanning and " (scanning...)" or "")
-				end
-
-				if not scanning and rendered >= resultCount then
-					statusLabel.Text = "  " .. resultCount .. " reference(s) found"
-					window:SetTitle("Xrefs: " .. tostring(target))
-					renderCon:Disconnect()
 				end
 			end)
 
-			local LOG = "xrefs_diag.txt"
-			writefile(LOG, "=== XREFS DIAG START " .. tostring(tick()) .. " ===\n")
-			local function log(msg)
-				appendfile(LOG, "[" .. string.format("%.2f", tick()) .. "] " .. msg .. "\n")
+			pcall(function()
+				local modules = _getloadedmodules()
+				for _, mod in ipairs(modules) do
+					pcall(function()
+						local senv = _getsenv(mod)
+						if senv then
+							local modName = mod.Name
+							for k, v in pairs(senv) do
+								scanValue(v, "module", modName .. "." .. tostring(k), 0)
+							end
+						end
+					end)
+				end
+			end)
+
+			if _getcallbackvalue then
+				pcall(function()
+					local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
+					for _, cbName in ipairs(cbNames) do
+						pcall(function()
+							local cb = _getcallbackvalue(target, cbName)
+							if cb then
+								addResult("callback", cbName, cb, getFuncInfo(cb))
+							end
+						end)
+					end
+				end)
 			end
 
-			local watchdog = game:GetService("RunService").Heartbeat:Connect(function()
-				appendfile(LOG, "[HEARTBEAT " .. string.format("%.2f", tick()) .. "] alive | results=" .. resultCount .. " rendered=" .. rendered .. "\n")
-			end)
+			local window = Lib.Window.new()
+			window:SetTitle("Xrefs: " .. tostring(target))
+			window:Resize(420, 320)
+			window.MinX = 250
+			window.MinY = 120
 
-			task.spawn(function()
-				log("SCAN START target=" .. tostring(target))
+			local content = window.GuiElems.Content
 
-				log("PHASE: getreg")
-				pcall(function()
-					local reg = getreg()
-					log("getreg() returned " .. tostring(#reg) .. " entries (# operator)")
-					local count = 0
-					for i, v in pairs(reg) do
-						count = count + 1
-					end
-					log("getreg() has " .. count .. " entries (pairs count)")
+			local statusLabel = createSimple("TextLabel", {
+				Parent = content,
+				BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 1),
+				Size = UDim2.new(1, 0, 0, 20),
+				Font = Enum.Font.SourceSans,
+				Text = "  " .. #results .. " reference(s) found",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left
+			})
 
-					local idx = 0
-					for i, v in pairs(reg) do
-						idx = idx + 1
-						log("getreg entry " .. idx .. "/" .. count .. " key=" .. tostring(i) .. " type=" .. type(v))
-						scanOps = 0
-						scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
-						log("getreg entry " .. idx .. " done, results=" .. resultCount)
-						topYield()
-					end
-				end)
-				log("PHASE: getreg DONE, results=" .. resultCount)
-				task.wait()
+			local copyBtn = createSimple("TextButton", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+				BorderSizePixel = 0,
+				Position = UDim2.new(1, -55, 0, 2),
+				Size = UDim2.new(0, 52, 0, 16),
+				Font = Enum.Font.SourceSans,
+				Text = "Copy All",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 12,
+				AutoButtonColor = false
+			})
+			
+			Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 3)
+			Lib.ButtonAnim(copyBtn, {Mode = 2})
 
-				log("PHASE: filtergc check, filtergc=" .. tostring(filtergc ~= nil))
-				if filtergc then
-					log("PHASE: filtergc Keys")
-					pcall(function()
-						local tbls = filtergc("table", { Keys = {target} })
-						log("filtergc Keys returned " .. #tbls .. " tables")
-						for i, tbl in ipairs(tbls) do
-							for k, v in pairs(tbl) do
-								if v == target then
-									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
-								end
-							end
-							topYield()
-						end
-					end)
-					log("PHASE: filtergc Keys DONE, results=" .. resultCount)
-					task.wait()
+			local scrollFrame = createSimple("ScrollingFrame", {
+				Parent = content,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 22),
+				Size = UDim2.new(1, 0, 1, -22),
+				CanvasSize = UDim2.new(0, 0, 0, #results * 20),
+				ScrollBarThickness = 5,
+				ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80),
+				ClipsDescendants = true
+			})
+			Instance.new("UIListLayout", scrollFrame).SortOrder = Enum.SortOrder.LayoutOrder
 
-					log("PHASE: filtergc Values")
-					pcall(function()
-						local tbls = filtergc("table", { Values = {target} })
-						log("filtergc Values returned " .. #tbls .. " tables")
-						for i, tbl in ipairs(tbls) do
-							for k, v in pairs(tbl) do
-								if v == target then
-									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
-								end
-							end
-							topYield()
-						end
-					end)
-					log("PHASE: filtergc Values DONE, results=" .. resultCount)
-					task.wait()
-
-					log("PHASE: filtergc Upvalues")
-					pcall(function()
-						local fns = filtergc("function", { Upvalues = {target} })
-						log("filtergc Upvalues returned " .. #fns .. " functions")
-						for i, fn in ipairs(fns) do
-							local ok2, ups = pcall(getupvalues, fn)
-							if ok2 and ups then
-								for ui, uv in pairs(ups) do
-									if uv == target then
-										addResult("filtergc", "function[" .. i .. "].upval[" .. ui .. "]", uv, getFuncInfo(fn))
-									end
-								end
-							end
-							topYield()
-						end
-					end)
-					log("PHASE: filtergc Upvalues DONE, results=" .. resultCount)
-					task.wait()
-				else
-					log("PHASE: getgc fallback")
-					pcall(function()
-						local gc = getgc(true)
-						log("getgc(true) returned " .. #gc .. " objects")
-						for i, v in ipairs(gc) do
-							scanOps = 0
-							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
-							topYield()
-							if i % 1000 == 0 then
-								log("getgc progress: " .. i .. "/" .. #gc .. " results=" .. resultCount)
-							end
-						end
-					end)
-					log("PHASE: getgc DONE, results=" .. resultCount)
-					task.wait()
+			local copyLines = {}
+			for i, res in ipairs(results) do
+				local displayText = "[" .. res.Source .. "] " .. res.Path
+				if res.FuncInfo then
+					displayText = displayText .. "  (" .. res.FuncInfo .. ")"
 				end
+				copyLines[i] = displayText
 
-				log("PHASE: getconnections, available=" .. tostring(getconnections ~= nil))
-				if getconnections then
-					local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "AncestryChanged", "Destroying"}
-					for _, sigName in ipairs(signalNames) do
-						log("getconnections: " .. sigName)
-						pcall(function()
-							local signal = target[sigName]
-							if signal then
-								local conns = getconnections(signal)
-								log("getconnections " .. sigName .. ": " .. #conns .. " connections")
-								for ci, conn in ipairs(conns) do
-									local fi = conn.Function and getFuncInfo(conn.Function) or nil
-									addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
-								end
-							end
-						end)
-					end
-				end
-				log("PHASE: getconnections DONE, results=" .. resultCount)
-				task.wait()
+				local isInstance = typeof(res.Value) == "Instance"
+				local entry = createSimple("TextButton", {
+					Parent = scrollFrame,
+					BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
+					BackgroundTransparency = 0,
+					BorderSizePixel = 0,
+					Size = UDim2.new(1, 0, 0, 20),
+					Font = Enum.Font.Code,
+					Text = "  " .. displayText,
+					TextColor3 = isInstance and Color3.fromRGB(130, 190, 255) or Color3.fromRGB(190, 190, 190),
+					TextSize = 12,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					AutoButtonColor = false,
+					LayoutOrder = i,
+					TextTruncate = Enum.TextTruncate.AtEnd
+				})
 
-				log("PHASE: threads")
-				pcall(function()
-					local threads = _getallthreads()
-					log("threads: " .. #threads .. " threads")
-					for ti, thread in ipairs(threads) do
-						local ok, tEnv = pcall(getfenv, thread)
-						if ok and type(tEnv) == "table" then
-							scanOps = 0
-							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
-						end
-						topYield()
-					end
+				entry.MouseEnter:Connect(function()
+					entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
 				end)
-				log("PHASE: threads DONE, results=" .. resultCount)
-				task.wait()
-
-				log("PHASE: modules")
-				pcall(function()
-					local modules = _getloadedmodules()
-					log("modules: " .. #modules .. " modules")
-					for mi, mod in ipairs(modules) do
-						pcall(function()
-							local senv = _getsenv(mod)
-							if senv then
-								local modName = mod.Name
-								for k, v in pairs(senv) do
-									scanOps = 0
-									scanValue(v, "module", modName .. "." .. tostring(k), 0)
-								end
-							end
-						end)
-						topYield()
-						if mi % 100 == 0 then
-							log("modules progress: " .. mi .. "/" .. #modules)
-						end
-					end
+				entry.MouseLeave:Connect(function()
+					entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
 				end)
-				log("PHASE: modules DONE, results=" .. resultCount)
-				task.wait()
 
-				log("PHASE: callbacks")
-				if _getcallbackvalue then
-					pcall(function()
-						local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
-						for _, cbName in ipairs(cbNames) do
-							pcall(function()
-								local cb = _getcallbackvalue(target, cbName)
-								if cb then
-									addResult("callback", cbName, cb, getFuncInfo(cb))
-								end
-							end)
+				if isInstance then
+					local inst = res.Value
+					entry.MouseButton1Click:Connect(function()
+						if nodes[inst] then
+							selection:Set(nodes[inst])
+							Explorer.ViewNode(nodes[inst])
 						end
 					end)
 				end
-				log("PHASE: callbacks DONE, results=" .. resultCount)
-
-				scanning = false
-				log("=== SCAN COMPLETE total=" .. resultCount .. " ===")
-				watchdog:Disconnect()
-			end)
+			end
 
 			copyBtn.MouseButton1Click:Connect(function()
 				if env.setclipboard then
@@ -1807,6 +1643,8 @@ local function main()
 					task.delay(1.5, function() pcall(function() copyBtn.Text = "Copy All" end) end)
 				end
 			end)
+
+			window:ShowAndFocus()
 		end})
 
 		context:Register("SAVE_INST",{Name = "Save to File", IconMap = Explorer.MiscIcons, Icon = "Save", OnClick = function()
