@@ -1531,6 +1531,14 @@ local function main()
 				end
 			end
 
+			local topIter = 0
+			local function topYield()
+				topIter = topIter + 1
+				if topIter % 200 == 0 then
+					task.wait()
+				end
+			end
+
 			local renderCon
 			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
 				if not scrollFrame.Parent then
@@ -1603,6 +1611,7 @@ local function main()
 					local reg = getreg()
 					for i, v in pairs(reg) do
 						scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
+						topYield()
 					end
 				end)
 				task.wait()
@@ -1616,6 +1625,7 @@ local function main()
 									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
 								end
 							end
+							topYield()
 						end
 					end)
 					task.wait()
@@ -1628,6 +1638,7 @@ local function main()
 									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
 								end
 							end
+							topYield()
 						end
 					end)
 					task.wait()
@@ -1643,6 +1654,7 @@ local function main()
 									end
 								end
 							end
+							topYield()
 						end
 					end)
 					task.wait()
@@ -1651,6 +1663,7 @@ local function main()
 						local gc = getgc(true)
 						for i, v in ipairs(gc) do
 							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
+							topYield()
 						end
 					end)
 					task.wait()
@@ -1680,6 +1693,7 @@ local function main()
 						if ok and type(tEnv) == "table" then
 							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
 						end
+						topYield()
 					end
 				end)
 				task.wait()
@@ -1696,6 +1710,7 @@ local function main()
 								end
 							end
 						end)
+						topYield()
 					end
 				end)
 				task.wait()
