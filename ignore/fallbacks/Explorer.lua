@@ -1464,7 +1464,7 @@ local function main()
 			local RENDER_PER_FRAME = 10
 
 			local visited = {}
-			local MAX_DEPTH = 6
+			local MAX_DEPTH = 2
 
 			local function getFuncInfo(fn)
 				local ok, info = pcall(debug.getinfo, fn, "s")
@@ -1534,7 +1534,7 @@ local function main()
 			local topIter = 0
 			local function topYield()
 				topIter = topIter + 1
-				if topIter % 200 == 0 then
+				if topIter % 50 == 0 then
 					task.wait()
 				end
 			end
@@ -1618,7 +1618,7 @@ local function main()
 
 				if filtergc then
 					pcall(function()
-						local tbls = filtergc("table", { Keys = target })
+						local tbls = filtergc("table", { Keys = {target} })
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
 								if v == target then
@@ -1631,7 +1631,7 @@ local function main()
 					task.wait()
 
 					pcall(function()
-						local tbls = filtergc("table", { Values = target })
+						local tbls = filtergc("table", { Values = {target} })
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
 								if v == target then
@@ -1644,7 +1644,7 @@ local function main()
 					task.wait()
 
 					pcall(function()
-						local fns = filtergc("function", { Upvalues = target })
+						local fns = filtergc("function", { Upvalues = {target} })
 						for i, fn in ipairs(fns) do
 							local ok2, ups = pcall(getupvalues, fn)
 							if ok2 and ups then
