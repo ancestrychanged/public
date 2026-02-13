@@ -1465,6 +1465,8 @@ local function main()
 
 			local visited = {}
 			local MAX_DEPTH = 2
+			local scanOps = 0
+			local SCAN_BUDGET = 5000
 
 			local function getFuncInfo(fn)
 				local ok, info = pcall(debug.getinfo, fn, "s")
@@ -1487,6 +1489,8 @@ local function main()
 			end
 
 			local function scanValue(val, source, path, depth)
+				scanOps = scanOps + 1
+				if scanOps > SCAN_BUDGET then return end
 				if depth > MAX_DEPTH then return end
 				if val == target then
 					addResult(source, path, val, nil)
@@ -1496,6 +1500,8 @@ local function main()
 					if visited[val] then return end
 					visited[val] = true
 					for k, v in pairs(val) do
+						scanOps = scanOps + 1
+						if scanOps > SCAN_BUDGET then break end
 						local kStr = tostring(k)
 						if v == target then
 							addResult(source, path .. "[" .. kStr .. "]", v, nil)
@@ -1633,6 +1639,7 @@ local function main()
 					for i, v in pairs(reg) do
 						idx = idx + 1
 						log("getreg entry " .. idx .. "/" .. count .. " key=" .. tostring(i) .. " type=" .. type(v))
+						scanOps = 0
 						scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
 						log("getreg entry " .. idx .. " done, results=" .. resultCount)
 						topYield()
@@ -1699,6 +1706,7 @@ local function main()
 						local gc = getgc(true)
 						log("getgc(true) returned " .. #gc .. " objects")
 						for i, v in ipairs(gc) do
+							scanOps = 0
 							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
 							topYield()
 							if i % 1000 == 0 then
@@ -1738,6 +1746,7 @@ local function main()
 					for ti, thread in ipairs(threads) do
 						local ok, tEnv = pcall(getfenv, thread)
 						if ok and type(tEnv) == "table" then
+							scanOps = 0
 							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
 						end
 						topYield()
@@ -1756,6 +1765,7 @@ local function main()
 							if senv then
 								local modName = mod.Name
 								for k, v in pairs(senv) do
+									scanOps = 0
 									scanValue(v, "module", modName .. "." .. tostring(k), 0)
 								end
 							end
