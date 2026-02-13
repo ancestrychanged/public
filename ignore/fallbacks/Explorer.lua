@@ -1606,19 +1606,47 @@ local function main()
 				end
 			end)
 
+			local LOG = "xrefs_diag.txt"
+			writefile(LOG, "=== XREFS DIAG START " .. tostring(tick()) .. " ===\n")
+			local function log(msg)
+				appendfile(LOG, "[" .. string.format("%.2f", tick()) .. "] " .. msg .. "\n")
+			end
+
+			local watchdog = game:GetService("RunService").Heartbeat:Connect(function()
+				appendfile(LOG, "[HEARTBEAT " .. string.format("%.2f", tick()) .. "] alive | results=" .. resultCount .. " rendered=" .. rendered .. "\n")
+			end)
+
 			task.spawn(function()
+				log("SCAN START target=" .. tostring(target))
+
+				log("PHASE: getreg")
 				pcall(function()
 					local reg = getreg()
+					log("getreg() returned " .. tostring(#reg) .. " entries (# operator)")
+					local count = 0
 					for i, v in pairs(reg) do
+						count = count + 1
+					end
+					log("getreg() has " .. count .. " entries (pairs count)")
+
+					local idx = 0
+					for i, v in pairs(reg) do
+						idx = idx + 1
+						log("getreg entry " .. idx .. "/" .. count .. " key=" .. tostring(i) .. " type=" .. type(v))
 						scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
+						log("getreg entry " .. idx .. " done, results=" .. resultCount)
 						topYield()
 					end
 				end)
+				log("PHASE: getreg DONE, results=" .. resultCount)
 				task.wait()
 
+				log("PHASE: filtergc check, filtergc=" .. tostring(filtergc ~= nil))
 				if filtergc then
+					log("PHASE: filtergc Keys")
 					pcall(function()
 						local tbls = filtergc("table", { Keys = {target} })
+						log("filtergc Keys returned " .. #tbls .. " tables")
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
 								if v == target then
@@ -1628,10 +1656,13 @@ local function main()
 							topYield()
 						end
 					end)
+					log("PHASE: filtergc Keys DONE, results=" .. resultCount)
 					task.wait()
 
+					log("PHASE: filtergc Values")
 					pcall(function()
 						local tbls = filtergc("table", { Values = {target} })
+						log("filtergc Values returned " .. #tbls .. " tables")
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
 								if v == target then
@@ -1641,10 +1672,13 @@ local function main()
 							topYield()
 						end
 					end)
+					log("PHASE: filtergc Values DONE, results=" .. resultCount)
 					task.wait()
 
+					log("PHASE: filtergc Upvalues")
 					pcall(function()
 						local fns = filtergc("function", { Upvalues = {target} })
+						log("filtergc Upvalues returned " .. #fns .. " functions")
 						for i, fn in ipairs(fns) do
 							local ok2, ups = pcall(getupvalues, fn)
 							if ok2 and ups then
@@ -1657,25 +1691,35 @@ local function main()
 							topYield()
 						end
 					end)
+					log("PHASE: filtergc Upvalues DONE, results=" .. resultCount)
 					task.wait()
 				else
+					log("PHASE: getgc fallback")
 					pcall(function()
 						local gc = getgc(true)
+						log("getgc(true) returned " .. #gc .. " objects")
 						for i, v in ipairs(gc) do
 							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
 							topYield()
+							if i % 1000 == 0 then
+								log("getgc progress: " .. i .. "/" .. #gc .. " results=" .. resultCount)
+							end
 						end
 					end)
+					log("PHASE: getgc DONE, results=" .. resultCount)
 					task.wait()
 				end
 
+				log("PHASE: getconnections, available=" .. tostring(getconnections ~= nil))
 				if getconnections then
 					local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "AncestryChanged", "Destroying"}
 					for _, sigName in ipairs(signalNames) do
+						log("getconnections: " .. sigName)
 						pcall(function()
 							local signal = target[sigName]
 							if signal then
 								local conns = getconnections(signal)
+								log("getconnections " .. sigName .. ": " .. #conns .. " connections")
 								for ci, conn in ipairs(conns) do
 									local fi = conn.Function and getFuncInfo(conn.Function) or nil
 									addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
@@ -1684,10 +1728,13 @@ local function main()
 						end)
 					end
 				end
+				log("PHASE: getconnections DONE, results=" .. resultCount)
 				task.wait()
 
+				log("PHASE: threads")
 				pcall(function()
 					local threads = _getallthreads()
+					log("threads: " .. #threads .. " threads")
 					for ti, thread in ipairs(threads) do
 						local ok, tEnv = pcall(getfenv, thread)
 						if ok and type(tEnv) == "table" then
@@ -1696,11 +1743,14 @@ local function main()
 						topYield()
 					end
 				end)
+				log("PHASE: threads DONE, results=" .. resultCount)
 				task.wait()
 
+				log("PHASE: modules")
 				pcall(function()
 					local modules = _getloadedmodules()
-					for _, mod in ipairs(modules) do
+					log("modules: " .. #modules .. " modules")
+					for mi, mod in ipairs(modules) do
 						pcall(function()
 							local senv = _getsenv(mod)
 							if senv then
@@ -1711,10 +1761,15 @@ local function main()
 							end
 						end)
 						topYield()
+						if mi % 100 == 0 then
+							log("modules progress: " .. mi .. "/" .. #modules)
+						end
 					end
 				end)
+				log("PHASE: modules DONE, results=" .. resultCount)
 				task.wait()
 
+				log("PHASE: callbacks")
 				if _getcallbackvalue then
 					pcall(function()
 						local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
@@ -1728,8 +1783,11 @@ local function main()
 						end
 					end)
 				end
+				log("PHASE: callbacks DONE, results=" .. resultCount)
 
 				scanning = false
+				log("=== SCAN COMPLETE total=" .. resultCount .. " ===")
+				watchdog:Disconnect()
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
