@@ -1456,68 +1456,12 @@ local function main()
 
 			window:ShowAndFocus()
 
-			local results = {}
+			local resultBuffer = {}
 			local copyLines = {}
 			local resultCount = 0
+			local rendered = 0
 			local scanning = true
-			local YIELD_EVERY = 500
-			local iterCount = 0
-
-			local function yieldCheck()
-				iterCount = iterCount + 1
-				if iterCount % YIELD_EVERY == 0 then
-					task.wait()
-				end
-			end
-
-			local function addEntry(source, path, value, funcInfo)
-				resultCount = resultCount + 1
-				local i = resultCount
-				results[i] = { Source = source, Path = path, Value = value, FuncInfo = funcInfo }
-
-				local displayText = "[" .. source .. "] " .. path
-				if funcInfo then
-					displayText = displayText .. "  (" .. funcInfo .. ")"
-				end
-				copyLines[i] = displayText
-
-				local isInstance = typeof(value) == "Instance"
-				local entry = createSimple("TextButton", {
-					Parent = scrollFrame,
-					BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
-					BackgroundTransparency = 0,
-					BorderSizePixel = 0,
-					Size = UDim2.new(1, 0, 0, 20),
-					Font = Enum.Font.Code,
-					Text = "  " .. displayText,
-					TextColor3 = isInstance and Color3.fromRGB(130, 190, 255) or Color3.fromRGB(190, 190, 190),
-					TextSize = 12,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					AutoButtonColor = false,
-					LayoutOrder = i,
-					TextTruncate = Enum.TextTruncate.AtEnd
-				})
-
-				entry.MouseEnter:Connect(function()
-					entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-				end)
-				entry.MouseLeave:Connect(function()
-					entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
-				end)
-
-				if isInstance then
-					local inst = value
-					entry.MouseButton1Click:Connect(function()
-						if nodes[inst] then
-							selection:Set(nodes[inst])
-							Explorer.ViewNode(nodes[inst])
-						end
-					end)
-				end
-
-				scrollFrame.CanvasSize = UDim2.new(0, 0, 0, i * 20)
-				statusLabel.Text = "  " .. i .. " reference(s) found" .. (scanning and " (scanning...)" or "")
-			end
+			local RENDER_PER_FRAME = 10
 
 			local visited = {}
 			local MAX_DEPTH = 6
@@ -1532,21 +1476,29 @@ local function main()
 				return nil
 			end
 
+			local function addResult(source, path, value, funcInfo)
+				resultCount = resultCount + 1
+				resultBuffer[resultCount] = {
+					Source = source,
+					Path = path,
+					Value = value,
+					FuncInfo = funcInfo
+				}
+			end
+
 			local function scanValue(val, source, path, depth)
 				if depth > MAX_DEPTH then return end
-				yieldCheck()
 				if val == target then
-					addEntry(source, path, val, nil)
+					addResult(source, path, val, nil)
 					return
 				end
 				if type(val) == "table" then
 					if visited[val] then return end
 					visited[val] = true
 					for k, v in pairs(val) do
-						yieldCheck()
 						local kStr = tostring(k)
 						if v == target then
-							addEntry(source, path .. "[" .. kStr .. "]", v, nil)
+							addResult(source, path .. "[" .. kStr .. "]", v, nil)
 						elseif type(v) == "table" then
 							scanValue(v, source, path .. "[" .. kStr .. "]", depth + 1)
 						elseif type(v) == "function" then
@@ -1554,13 +1506,13 @@ local function main()
 							if ok2 and ups then
 								for ui, uv in pairs(ups) do
 									if uv == target then
-										addEntry(source, path .. "[" .. kStr .. "].upval[" .. ui .. "]", uv, getFuncInfo(v))
+										addResult(source, path .. "[" .. kStr .. "].upval[" .. ui .. "]", uv, getFuncInfo(v))
 									end
 								end
 							end
 						end
 						if k == target then
-							addEntry(source, path .. ".<key>" .. kStr, k, nil)
+							addResult(source, path .. ".<key>" .. kStr, k, nil)
 						end
 					end
 				elseif type(val) == "function" then
@@ -1570,7 +1522,7 @@ local function main()
 					if ok2 and ups then
 						for ui, uv in pairs(ups) do
 							if uv == target then
-								addEntry(source, path .. ".upval[" .. ui .. "]", uv, getFuncInfo(val))
+								addResult(source, path .. ".upval[" .. ui .. "]", uv, getFuncInfo(val))
 							elseif type(uv) == "table" then
 								scanValue(uv, source, path .. ".upval[" .. ui .. "]", depth + 1)
 							end
@@ -1579,11 +1531,77 @@ local function main()
 				end
 			end
 
+			local renderCon
+			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
+				if not scrollFrame.Parent then
+					renderCon:Disconnect()
+					return
+				end
+
+				local batch = 0
+				while rendered < resultCount and batch < RENDER_PER_FRAME do
+					rendered = rendered + 1
+					batch = batch + 1
+					local i = rendered
+					local res = resultBuffer[i]
+
+					local displayText = "[" .. res.Source .. "] " .. res.Path
+					if res.FuncInfo then
+						displayText = displayText .. "  (" .. res.FuncInfo .. ")"
+					end
+					copyLines[i] = displayText
+
+					local isInstance = typeof(res.Value) == "Instance"
+					local entry = createSimple("TextButton", {
+						Parent = scrollFrame,
+						BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
+						BackgroundTransparency = 0,
+						BorderSizePixel = 0,
+						Size = UDim2.new(1, 0, 0, 20),
+						Font = Enum.Font.Code,
+						Text = "  " .. displayText,
+						TextColor3 = isInstance and Color3.fromRGB(130, 190, 255) or Color3.fromRGB(190, 190, 190),
+						TextSize = 12,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						AutoButtonColor = false,
+						LayoutOrder = i,
+						TextTruncate = Enum.TextTruncate.AtEnd
+					})
+
+					entry.MouseEnter:Connect(function()
+						entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+					end)
+					entry.MouseLeave:Connect(function()
+						entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
+					end)
+
+					if isInstance then
+						local inst = res.Value
+						entry.MouseButton1Click:Connect(function()
+							if nodes[inst] then
+								selection:Set(nodes[inst])
+								Explorer.ViewNode(nodes[inst])
+							end
+						end)
+					end
+				end
+
+				if batch > 0 then
+					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, rendered * 20)
+					statusLabel.Text = "  " .. rendered .. " reference(s) found" .. (scanning and " (scanning...)" or "")
+				end
+
+				if not scanning and rendered >= resultCount then
+					statusLabel.Text = "  " .. resultCount .. " reference(s) found"
+					window:SetTitle("Xrefs: " .. tostring(target))
+					renderCon:Disconnect()
+				end
+			end)
+
 			task.spawn(function()
 				pcall(function()
 					local reg = getreg()
 					for i, v in pairs(reg) do
-						yieldCheck()
 						scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
 					end
 				end)
@@ -1593,10 +1611,9 @@ local function main()
 					pcall(function()
 						local tbls = filtergc("table", { Keys = target })
 						for i, tbl in ipairs(tbls) do
-							yieldCheck()
 							for k, v in pairs(tbl) do
 								if v == target then
-									addEntry("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
+									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
 								end
 							end
 						end
@@ -1606,10 +1623,9 @@ local function main()
 					pcall(function()
 						local tbls = filtergc("table", { Values = target })
 						for i, tbl in ipairs(tbls) do
-							yieldCheck()
 							for k, v in pairs(tbl) do
 								if v == target then
-									addEntry("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
+									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
 								end
 							end
 						end
@@ -1619,12 +1635,11 @@ local function main()
 					pcall(function()
 						local fns = filtergc("function", { Upvalues = target })
 						for i, fn in ipairs(fns) do
-							yieldCheck()
 							local ok2, ups = pcall(getupvalues, fn)
 							if ok2 and ups then
 								for ui, uv in pairs(ups) do
 									if uv == target then
-										addEntry("filtergc", "function[" .. i .. "].upval[" .. ui .. "]", uv, getFuncInfo(fn))
+										addResult("filtergc", "function[" .. i .. "].upval[" .. ui .. "]", uv, getFuncInfo(fn))
 									end
 								end
 							end
@@ -1635,7 +1650,6 @@ local function main()
 					pcall(function()
 						local gc = getgc(true)
 						for i, v in ipairs(gc) do
-							yieldCheck()
 							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
 						end
 					end)
@@ -1651,7 +1665,7 @@ local function main()
 								local conns = getconnections(signal)
 								for ci, conn in ipairs(conns) do
 									local fi = conn.Function and getFuncInfo(conn.Function) or nil
-									addEntry("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
+									addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
 								end
 							end
 						end)
@@ -1662,7 +1676,6 @@ local function main()
 				pcall(function()
 					local threads = _getallthreads()
 					for ti, thread in ipairs(threads) do
-						yieldCheck()
 						local ok, tEnv = pcall(getfenv, thread)
 						if ok and type(tEnv) == "table" then
 							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
@@ -1674,13 +1687,11 @@ local function main()
 				pcall(function()
 					local modules = _getloadedmodules()
 					for _, mod in ipairs(modules) do
-						yieldCheck()
 						pcall(function()
 							local senv = _getsenv(mod)
 							if senv then
 								local modName = mod.Name
 								for k, v in pairs(senv) do
-									yieldCheck()
 									scanValue(v, "module", modName .. "." .. tostring(k), 0)
 								end
 							end
@@ -1696,7 +1707,7 @@ local function main()
 							pcall(function()
 								local cb = _getcallbackvalue(target, cbName)
 								if cb then
-									addEntry("callback", cbName, cb, getFuncInfo(cb))
+									addResult("callback", cbName, cb, getFuncInfo(cb))
 								end
 							end)
 						end
@@ -1704,8 +1715,6 @@ local function main()
 				end
 
 				scanning = false
-				statusLabel.Text = "  " .. resultCount .. " reference(s) found"
-				window:SetTitle("Xrefs: " .. tostring(target))
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
