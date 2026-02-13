@@ -912,6 +912,7 @@ local function main()
 		-- context:AddRegistered("VIEW_CONNECTIONS")
 		-- context:AddRegistered("GET_REFERENCES")
 		context:AddRegistered("COPY_API_PAGE")
+		context:AddRegistered("SHOW_XREFS", env.getreg == nil)
 
 		context:QueueDivider()
 
@@ -1355,11 +1356,294 @@ local function main()
 
 		--[[context:Register("CALL_FUNCTION",{Name = "Call Function", IconMap = Explorer.ClassIcons, Icon = 66, OnClick = function()
 
-		end})
-
-		context:Register("GET_REFERENCES",{Name = "Get Lua References", IconMap = Explorer.ClassIcons, Icon = 34, OnClick = function()
-
 		end})]]
+
+		context:Register("SHOW_XREFS",{Name = "Show xrefs", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function()
+			local sList = selection.List
+			if #sList == 0 then return end
+			local target = sList[1].Obj
+
+			local _getallthreads = getallthreads or function()
+				local threads, seen = {}, {}
+				for _, v in pairs(getreg()) do
+					if type(v) == "thread" and not seen[v] then
+						seen[v] = true
+						threads[#threads + 1] = v
+					end
+				end
+				return threads
+			end
+
+			local _getcallbackvalue = getcallbackvalue or getcallbackmember
+			local _getloadedmodules = getloadedmodules or function()
+				local modules = {}
+				for _, desc in ipairs(game:GetDescendants()) do
+					if desc:IsA("ModuleScript") then
+						modules[#modules + 1] = desc
+					end
+				end
+				return modules
+			end
+
+			local _getsenv = getsenv or function(script) -- fak u seliware
+				for _, v in pairs(getreg()) do
+					if type(v) == "table" and rawget(v, "script") == script then
+						return v
+					end
+				end
+				return {}
+			end
+
+			local _getscriptfromthread = getscriptfromthread or function(thread)
+				local ok, info = pcall(debug.getinfo, thread, 1, "s")
+				if ok and info and info.source then
+					local path = info.source:gsub("^@?", "")
+					local s, result = pcall(function() return game:FindFirstChild(path, true) end)
+					if s and result and result:IsA("LuaSourceContainer") then return result end
+				end
+				return nil
+			end
+
+			local results = {}
+			local visited = {}
+			local MAX_DEPTH = 8
+
+			local function addResult(source, path, value, funcInfo)
+				results[#results + 1] = {
+					Source = source,
+					Path = path,
+					Value = value,
+					FuncInfo = funcInfo
+				}
+			end
+
+			local function getFuncInfo(fn)
+				local ok, info = pcall(debug.getinfo, fn, "s")
+				if ok and info then
+					local src = info.short_src or info.source or "?"
+					local line = info.linedefined or "?"
+					return src .. ":" .. tostring(line)
+				end
+				return nil
+			end
+
+			local function scanValue(val, source, path, depth)
+				if depth > MAX_DEPTH then return end
+				if val == target then
+					addResult(source, path, val, nil)
+					return
+				end
+				if type(val) == "table" then
+					if visited[val] then return end
+					visited[val] = true
+					for k, v in pairs(val) do
+						local kStr = tostring(k)
+						if v == target then
+							addResult(source, path .. "[" .. kStr .. "]", v, nil)
+						elseif type(v) == "table" then
+							scanValue(v, source, path .. "[" .. kStr .. "]", depth + 1)
+						elseif type(v) == "function" then
+							local ok2, ups = pcall(getupvalues, v)
+							if ok2 and ups then
+								for ui, uv in pairs(ups) do
+									if uv == target then
+										addResult(source, path .. "[" .. kStr .. "].upval[" .. ui .. "]", uv, getFuncInfo(v))
+									end
+								end
+							end
+						end
+						if k == target then
+							addResult(source, path .. ".<key>" .. kStr, k, nil)
+						end
+					end
+				elseif type(val) == "function" then
+					if visited[val] then return end
+					visited[val] = true
+					local ok2, ups = pcall(getupvalues, val)
+					if ok2 and ups then
+						for ui, uv in pairs(ups) do
+							if uv == target then
+								addResult(source, path .. ".upval[" .. ui .. "]", uv, getFuncInfo(val))
+							elseif type(uv) == "table" then
+								scanValue(uv, source, path .. ".upval[" .. ui .. "]", depth + 1)
+							end
+						end
+					end
+				end
+			end
+
+			pcall(function()
+				local reg = getreg()
+				for i, v in pairs(reg) do
+					scanValue(v, "getreg", "registry[" .. tostring(i) .. "]", 0)
+				end
+			end)
+
+			pcall(function()
+				local gc = getgc(true)
+				for i, v in ipairs(gc) do
+					scanValue(v, "getgc", "gc[" .. i .. "]", 0)
+				end
+			end)
+
+			if getconnections then
+				local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "AncestryChanged", "Destroying"}
+				for _, sigName in ipairs(signalNames) do
+					pcall(function()
+						local signal = target[sigName]
+						if signal then
+							local conns = getconnections(signal)
+							for ci, conn in ipairs(conns) do
+								local fi = conn.Function and getFuncInfo(conn.Function) or nil
+								addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
+							end
+						end
+					end)
+				end
+			end
+
+			pcall(function()
+				local threads = _getallthreads()
+				for ti, thread in ipairs(threads) do
+					local ok, tEnv = pcall(getfenv, thread)
+					if ok and type(tEnv) == "table" then
+						scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
+					end
+				end
+			end)
+
+			pcall(function()
+				local modules = _getloadedmodules()
+				for _, mod in ipairs(modules) do
+					pcall(function()
+						local senv = _getsenv(mod)
+						if senv then
+							local modName = mod.Name
+							for k, v in pairs(senv) do
+								scanValue(v, "module", modName .. "." .. tostring(k), 0)
+							end
+						end
+					end)
+				end
+			end)
+
+			if _getcallbackvalue then
+				pcall(function()
+					local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
+					for _, cbName in ipairs(cbNames) do
+						pcall(function()
+							local cb = _getcallbackvalue(target, cbName)
+							if cb then
+								addResult("callback", cbName, cb, getFuncInfo(cb))
+							end
+						end)
+					end
+				end)
+			end
+
+			local window = Lib.Window.new()
+			window:SetTitle("Xrefs: " .. tostring(target))
+			window:Resize(420, 320)
+			window.MinX = 250
+			window.MinY = 120
+
+			local content = window.GuiElems.Content
+
+			local statusLabel = createSimple("TextLabel", {
+				Parent = content,
+				BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 1),
+				Size = UDim2.new(1, 0, 0, 20),
+				Font = Enum.Font.SourceSans,
+				Text = "  " .. #results .. " reference(s) found",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left
+			})
+
+			local copyBtn = createSimple("TextButton", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+				BorderSizePixel = 0,
+				Position = UDim2.new(1, -55, 0, 2),
+				Size = UDim2.new(0, 52, 0, 16),
+				Font = Enum.Font.SourceSans,
+				Text = "Copy All",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 12,
+				AutoButtonColor = false
+			})
+			
+			Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 3)
+			Lib.ButtonAnim(copyBtn, {Mode = 2})
+
+			local scrollFrame = createSimple("ScrollingFrame", {
+				Parent = content,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 22),
+				Size = UDim2.new(1, 0, 1, -22),
+				CanvasSize = UDim2.new(0, 0, 0, #results * 20),
+				ScrollBarThickness = 5,
+				ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80),
+				ClipsDescendants = true
+			})
+			Instance.new("UIListLayout", scrollFrame).SortOrder = Enum.SortOrder.LayoutOrder
+
+			local copyLines = {}
+			for i, res in ipairs(results) do
+				local displayText = "[" .. res.Source .. "] " .. res.Path
+				if res.FuncInfo then
+					displayText = displayText .. "  (" .. res.FuncInfo .. ")"
+				end
+				copyLines[i] = displayText
+
+				local isInstance = typeof(res.Value) == "Instance"
+				local entry = createSimple("TextButton", {
+					Parent = scrollFrame,
+					BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
+					BackgroundTransparency = 0,
+					BorderSizePixel = 0,
+					Size = UDim2.new(1, 0, 0, 20),
+					Font = Enum.Font.Code,
+					Text = "  " .. displayText,
+					TextColor3 = isInstance and Color3.fromRGB(130, 190, 255) or Color3.fromRGB(190, 190, 190),
+					TextSize = 12,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					AutoButtonColor = false,
+					LayoutOrder = i,
+					TextTruncate = Enum.TextTruncate.AtEnd
+				})
+
+				entry.MouseEnter:Connect(function()
+					entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+				end)
+				entry.MouseLeave:Connect(function()
+					entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
+				end)
+
+				if isInstance then
+					local inst = res.Value
+					entry.MouseButton1Click:Connect(function()
+						if nodes[inst] then
+							selection:Set(nodes[inst])
+							Explorer.ViewNode(nodes[inst])
+						end
+					end)
+				end
+			end
+
+			copyBtn.MouseButton1Click:Connect(function()
+				if env.setclipboard then
+					env.setclipboard(table.concat(copyLines, "\n"))
+					copyBtn.Text = "Copied!"
+					task.delay(1.5, function() pcall(function() copyBtn.Text = "Copy All" end) end)
+				end
+			end)
+
+			window:ShowAndFocus()
+		end})
 
 		context:Register("SAVE_INST",{Name = "Save to File", IconMap = Explorer.MiscIcons, Icon = "Save", OnClick = function()
 			local sList = selection.List
