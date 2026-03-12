@@ -895,6 +895,7 @@ local function main()
 		context:AddRegistered("RENAME", #sList ~= 1)
 
 		context:AddDivider()
+
 		context:AddRegistered("GROUP")
 		context:AddRegistered("UNGROUP")
 		context:AddRegistered("SELECT_CHILDREN")
@@ -908,9 +909,6 @@ local function main()
 		if env.setclipboard then context:AddRegistered("COPY_PATH") end
 		context:AddRegistered("INSERT_OBJECT")
 		context:AddRegistered("SAVE_INST")
-		-- context:AddRegistered("CALL_FUNCTION")
-		-- context:AddRegistered("VIEW_CONNECTIONS")
-		-- context:AddRegistered("GET_REFERENCES")
 		context:AddRegistered("COPY_API_PAGE")
 		context:AddRegistered("SHOW_XREFS", env.getreg == nil)
 
@@ -921,16 +919,17 @@ local function main()
 			context:AddRegistered("VIEW_OBJECT")
 			context:AddRegistered("3DVIEW_MODEL")
 		end
-		if presentClasses["Tween"] then context:AddRegistered("PLAY_TWEEN") end
+		
 		if presentClasses["Animation"] then
 			context:AddRegistered("LOAD_ANIMATION")
 			context:AddRegistered("STOP_ANIMATION")
 		end
-
+		
+		if presentClasses["Tween"] then context:AddRegistered("PLAY_TWEEN") end
+		
 		if presentClasses["TouchTransmitter"] then context:AddRegistered("FIRE_TOUCHTRANSMITTER", firetouchinterest == nil) end
 		if presentClasses["ClickDetector"] then context:AddRegistered("FIRE_CLICKDETECTOR", fireclickdetector == nil) end
 		if presentClasses["ProximityPrompt"] then context:AddRegistered("FIRE_PROXIMITYPROMPT", fireproximityprompt == nil) end
-		
 		
 		if presentClasses["RemoteEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["RemoteEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
@@ -941,14 +940,11 @@ local function main()
 		if presentClasses["UnreliableRemoteEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["UnreliableRemoteEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
 		
-		
 		if presentClasses["BindableEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["BindableEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
 		
 		if presentClasses["BindableFunction"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["BindableFunction"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
-		
-		
 		
 		if presentClasses["Player"] then context:AddRegistered("SELECT_CHARACTER")context:AddRegistered("VIEW_PLAYER") end
 		if presentClasses["Players"] then
@@ -1441,12 +1437,33 @@ local function main()
 			Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 3)
 			Lib.ButtonAnim(copyBtn, {Mode = 2})
 
+			local cfgFrame = createSimple("Frame", {
+				Parent = content,
+				BackgroundColor3 = Color3.fromRGB(28, 28, 28),
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 22),
+				Size = UDim2.new(1, 0, 0, 110)
+			})
+
+			local cfgLabel = createSimple("TextLabel", {
+				Parent = cfgFrame,
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0, 6, 0, 4),
+				Size = UDim2.new(1, -12, 1, -8),
+				Font = Enum.Font.Code,
+				Text = "call stack\n  (building...)",
+				TextColor3 = Color3.fromRGB(180, 210, 255),
+				TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top
+			})
+
 			local scrollFrame = createSimple("ScrollingFrame", {
 				Parent = content,
 				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
-				Position = UDim2.new(0, 0, 0, 22),
-				Size = UDim2.new(1, 0, 1, -22),
+				Position = UDim2.new(0, 0, 0, 134),
+				Size = UDim2.new(1, 0, 1, -134),
 				CanvasSize = UDim2.new(0, 0, 0, 0),
 				ScrollBarThickness = 5,
 				ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80),
@@ -1461,83 +1478,580 @@ local function main()
 			local resultCount = 0
 			local rendered = 0
 			local scanning = true
-			local RENDER_PER_FRAME = 10
+			local rpf = 10
 
 			local visited = {}
-			local MAX_DEPTH = 2
+			local mDepth = 2
 			local scanOps = 0
-			local SCAN_BUDGET = 5000
+			local howmuch = 5000
 
-			local function getFuncInfo(fn)
-				local ok, info = pcall(debug.getinfo, fn, "s")
+			local chainDepth = 4
+			local chainLimit = 18
+			local chainCahce = {}
+
+			local topIter = 0
+			local renderCon
+
+			local function safePath(inst)
+				if typeof(inst) ~= "Instance" then
+					return tostring(inst)
+				end
+
+				local ok, path = pcall(Explorer.GetInstancePath, inst)
+				if ok and path then
+					return path
+				end
+
+				local ok2, fullName = pcall(inst.GetFullName, inst)
+				return ok2 and fullName or tostring(inst)
+			end
+
+			local function getFnInfo(fn)
+				local ok, info = pcall(debug.getinfo, fn, "Snl")
 				if ok and info then
 					local src = info.short_src or info.source or "?"
 					local line = info.linedefined or "?"
-					return src .. ":" .. tostring(line)
+					return {
+						Display = src .. ":" .. tostring(line),
+						ShortSource = src,
+						Source = info.source,
+						Line = line,
+						Name = info.name
+					}
 				end
 				return nil
 			end
 
-			local function addResult(source, path, value, funcInfo)
+			local function inferScriptFromFunction(fn)
+				local ok, fenv = pcall(getfenv, fn)
+				if ok and type(fenv) == "table" then
+					local scr = rawget(fenv, "script")
+					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+						return scr, "fenv.script"
+					end
+				end
+
+				local info = getFnInfo(fn)
+				local rawSource = info and info.Source
+				if rawSource then
+					local sourcePath = tostring(rawSource):gsub("^@?", "")
+					local ok2, found = pcall(function()
+						return game:FindFirstChild(sourcePath, true)
+					end)
+					if ok2 and found and found:IsA("LuaSourceContainer") then
+						return found, "debug.info"
+					end
+				end
+
+				return nil, nil
+			end
+
+			local function inferScriptFromTable(tbl)
+				if type(tbl) ~= "table" then
+					return nil, nil
+				end
+
+				local scr = rawget(tbl, "script")
+				if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+					return scr, "table.script"
+				end
+
+				scr = rawget(tbl, "Script")
+				if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+					return scr, "table.Script"
+				end
+
+				return nil, nil
+			end
+
+			local function describeOwner(ownerScript, ownerHint, funcInfo)
+				if typeof(ownerScript) == "Instance" then
+					return safePath(ownerScript)
+				end
+				if ownerHint and ownerHint ~= "" then
+					return ownerHint
+				end
+				if funcInfo and funcInfo.ShortSource then
+					return funcInfo.ShortSource
+				end
+				return "unknown runtime owner"
+			end
+
+			local function describeHolder(holder, funcInfo, ownerScript, ownerHint, source)
+				if (source == "thread" or source == "thread-env") and ownerScript then
+					return safePath(ownerScript) .. ".env"
+				end
+				if (source == "module" or source == "module-env") and ownerScript then
+					return safePath(ownerScript) .. ".env"
+				end
+
+				local holderType = type(holder)
+				if holderType == "function" then
+					return funcInfo and ("function " .. funcInfo.Display) or ("function " .. tostring(holder))
+				elseif holderType == "table" then
+					local tableScript = ownerScript
+					if not tableScript then
+						tableScript = select(1, inferScriptFromTable(holder))
+					end
+					if tableScript then
+						return "table@" .. safePath(tableScript)
+					end
+					return "table " .. tostring(holder)
+				elseif holderType == "thread" then
+					local threadScript = ownerScript or _getscriptfromthread(holder)
+					return threadScript and ("thread@" .. safePath(threadScript)) or ("thread " .. tostring(holder))
+				elseif typeof(holder) == "Instance" then
+					return safePath(holder)
+				end
+
+				if ownerHint and ownerHint ~= "" then
+					return ownerHint
+				end
+
+				return tostring(holder)
+			end
+
+			local function getHolderId(holder)
+				if holder == nil then
+					return "nil"
+				end
+
+				local holderType = type(holder)
+				if holderType == "table" or holderType == "function" or holderType == "thread" or holderType == "userdata" then
+					return holderType .. ":" .. tostring(holder)
+				end
+
+				return typeof(holder) .. ":" .. tostring(holder)
+			end
+
+			local function getResultScore(res)
+				local base = ({
+					callback = 110,
+					connection = 104,
+					module = 96,
+					thread = 92,
+					filtergc = 68,
+					getgc = 60
+				})[res.Source] or 45
+
+				if res.OwnerScript then base = base + 20 end
+				if res.FuncInfo then base = base + 8 end
+				if res.Holder and type(res.Holder) == "function" then base = base + 8 end
+				if res.Holder and type(res.Holder) == "thread" then base = base + 10 end
+
+				return base
+			end
+
+			local function addResult(source, path, value, funcInfo, ownerScript, ownerHint, holder, edgeText, holderFuncInfo)
 				resultCount = resultCount + 1
 				resultBuffer[resultCount] = {
 					Source = source,
 					Path = path,
 					Value = value,
-					FuncInfo = funcInfo
+					FuncInfo = funcInfo,
+					OwnerScript = ownerScript,
+					OwnerHint = ownerHint,
+					Holder = holder,
+					EdgeText = edgeText,
+					HolderFuncInfo = holderFuncInfo or ((type(holder) == "function") and funcInfo or nil)
 				}
 			end
 
-			local function scanValue(val, source, path, depth)
+			local function scanValue(val, source, path, depth, ownerScript, ownerHint)
 				scanOps = scanOps + 1
 				if scanOps > SCAN_BUDGET then return end
 				if depth > MAX_DEPTH then return end
+
 				if val == target then
-					addResult(source, path, val, nil)
+					addResult(source, path, val, nil, ownerScript, ownerHint, nil, path, nil)
 					return
 				end
+
 				if type(val) == "table" then
 					if visited[val] then return end
 					visited[val] = true
+
 					for k, v in pairs(val) do
 						scanOps = scanOps + 1
 						if scanOps > SCAN_BUDGET then break end
+
 						local kStr = tostring(k)
 						if v == target then
-							addResult(source, path .. "[" .. kStr .. "]", v, nil)
+							addResult(source, path .. "[" .. kStr .. "]", v, nil, ownerScript, ownerHint, val, "[" .. kStr .. "]", nil)
 						elseif type(v) == "table" then
-							scanValue(v, source, path .. "[" .. kStr .. "]", depth + 1)
+							scanValue(v, source, path .. "[" .. kStr .. "]", depth + 1, ownerScript, ownerHint)
 						elseif type(v) == "function" then
 							local ok2, ups = pcall(getupvalues, v)
+							local fnInfo = getFnInfo(v)
+							local fnOwner, fnOwnerHint = inferScriptFromFunction(v)
 							if ok2 and ups then
 								for ui, uv in pairs(ups) do
 									if uv == target then
-										addResult(source, path .. "[" .. kStr .. "].upval[" .. ui .. "]", uv, getFuncInfo(v))
+										addResult(
+											source,
+											path .. "[" .. kStr .. "].upval[" .. ui .. "]",
+											uv,
+											fnInfo,
+											fnOwner or ownerScript,
+											fnOwnerHint or ownerHint,
+											v,
+											"upval[" .. ui .. "]",
+											fnInfo
+										)
 									end
 								end
 							end
 						end
+
 						if k == target then
-							addResult(source, path .. ".<key>" .. kStr, k, nil)
+							addResult(source, path .. ".<key>" .. kStr, k, nil, ownerScript, ownerHint, val, ".<key>", nil)
 						end
 					end
 				elseif type(val) == "function" then
 					if visited[val] then return end
 					visited[val] = true
+
 					local ok2, ups = pcall(getupvalues, val)
+					local fnInfo = getFnInfo(val)
+					local fnOwner, fnOwnerHint = inferScriptFromFunction(val)
+
 					if ok2 and ups then
 						for ui, uv in pairs(ups) do
 							if uv == target then
-								addResult(source, path .. ".upval[" .. ui .. "]", uv, getFuncInfo(val))
+								addResult(
+									source,
+									path .. ".upval[" .. ui .. "]",
+									uv,
+									fnInfo,
+									fnOwner or ownerScript,
+									fnOwnerHint or ownerHint,
+									val,
+									"upval[" .. ui .. "]",
+									fnInfo
+								)
 							elseif type(uv) == "table" then
-								scanValue(uv, source, path .. ".upval[" .. ui .. "]", depth + 1)
+								scanValue(
+									uv,
+									source,
+									path .. ".upval[" .. ui .. "]",
+									depth + 1,
+									fnOwner or ownerScript,
+									fnOwnerHint or ownerHint
+								)
 							end
 						end
 					end
 				end
 			end
 
-			local topIter = 0
+			local function getRetainerScore(ret)
+				local base = ({
+					["thread-env"] = 120,
+					["module-env"] = 114,
+					["function-upvalue"] = 108,
+					["table-script"] = 88,
+					["table-value"] = 56,
+					["table-key"] = 50
+				})[ret.Kind] or 40
+
+				if ret.OwnerScript then base = base + 24 end
+				if ret.FuncInfo then base = base + 12 end
+
+				return base
+			end
+
+			local function pushRetainer(list, seen, ret)
+				local key = ret.Kind .. "|" .. getHolderId(ret.Holder) .. "|" .. tostring(ret.Edge)
+				if not seen[key] then
+					seen[key] = true
+					ret.Score = ret.Score or getRetainerScore(ret)
+					list[#list + 1] = ret
+				end
+			end
+
+			local function findDirectRetainers(node)
+				local cacheKey = getHolderId(node)
+				local cached = chainCahce[cacheKey]
+				if cached then
+					return cached
+				end
+
+				local found, seen = {}, {}
+
+				if filtergc then
+					pcall(function()
+						local tbls = filtergc("table", { Values = {node} })
+						for _, tbl in ipairs(tbls) do
+							for k, v in pairs(tbl) do
+								if v == node then
+									local tableScript, tableHint = inferScriptFromTable(tbl)
+									pushRetainer(found, seen, {
+										Kind = tableScript and "table-script" or "table-value",
+										Holder = tbl,
+										Edge = "[" .. tostring(k) .. "]",
+										OwnerScript = tableScript,
+										OwnerHint = tableHint
+									})
+									break
+								end
+							end
+							if #found >= chainLimit then break end
+						end
+					end)
+
+					pcall(function()
+						local tbls = filtergc("table", { Keys = {node} })
+						for _, tbl in ipairs(tbls) do
+							for k, v in pairs(tbl) do
+								if k == node then
+									local tableScript, tableHint = inferScriptFromTable(tbl)
+									pushRetainer(found, seen, {
+										Kind = tableScript and "table-script" or "table-key",
+										Holder = tbl,
+										Edge = ".<key>",
+										OwnerScript = tableScript,
+										OwnerHint = tableHint
+									})
+									break
+								end
+							end
+							if #found >= chainLimit then break end
+						end
+					end)
+
+					pcall(function()
+						local fns = filtergc("function", { Upvalues = {node} })
+						for _, fn in ipairs(fns) do
+							local ok2, ups = pcall(getupvalues, fn)
+							local fnInfo = getFnInfo(fn)
+							local fnOwner, fnOwnerHint = inferScriptFromFunction(fn)
+							if ok2 and ups then
+								for ui, uv in pairs(ups) do
+									if uv == node then
+										pushRetainer(found, seen, {
+											Kind = "function-upvalue",
+											Holder = fn,
+											Edge = "upval[" .. ui .. "]",
+											FuncInfo = fnInfo,
+											OwnerScript = fnOwner,
+											OwnerHint = fnOwnerHint
+										})
+										break
+									end
+								end
+							end
+							if #found >= chainLimit then break end
+						end
+					end)
+				end
+
+				pcall(function()
+					local threads = _getallthreads()
+					for ti, thread in ipairs(threads) do
+						local ok, tEnv = pcall(getfenv, thread)
+						if ok and type(tEnv) == "table" then
+							for k, v in pairs(tEnv) do
+								if v == node then
+									local threadScript = _getscriptfromthread(thread)
+									pushRetainer(found, seen, {
+										Kind = "thread-env",
+										Holder = thread,
+										Edge = "env[" .. tostring(k) .. "]",
+										OwnerScript = threadScript,
+										OwnerHint = threadScript and safePath(threadScript) or ("thread[" .. ti .. "]")
+									})
+									break
+								elseif k == node then
+									local threadScript = _getscriptfromthread(thread)
+									pushRetainer(found, seen, {
+										Kind = "thread-env",
+										Holder = thread,
+										Edge = "env.<key>",
+										OwnerScript = threadScript,
+										OwnerHint = threadScript and safePath(threadScript) or ("thread[" .. ti .. "]")
+									})
+									break
+								end
+							end
+						end
+						if #found >= chainLimit then break end
+					end
+				end)
+
+				pcall(function()
+					local modules = _getloadedmodules()
+					for _, mod in ipairs(modules) do
+						local ok2, senv = pcall(_getsenv, mod)
+						if ok2 and type(senv) == "table" then
+							for k, v in pairs(senv) do
+								if v == node then
+									pushRetainer(found, seen, {
+										Kind = "module-env",
+										Holder = mod,
+										Edge = "env[" .. tostring(k) .. "]",
+										OwnerScript = mod,
+										OwnerHint = safePath(mod)
+									})
+									break
+								elseif k == node then
+									pushRetainer(found, seen, {
+										Kind = "module-env",
+										Holder = mod,
+										Edge = "env.<key>",
+										OwnerScript = mod,
+										OwnerHint = safePath(mod)
+									})
+									break
+								end
+							end
+						end
+						if #found >= chainLimit then break end
+					end
+				end)
+
+				table.sort(found, function(a, b)
+					if a.Score ~= b.Score then
+						return a.Score > b.Score
+					end
+					return tostring(a.Edge) < tostring(b.Edge)
+				end)
+
+				chainCahce[cacheKey] = found
+				return found
+			end
+
+			local function buildRetentionChain(res)
+				if not res then
+					return nil, 0
+				end
+
+				local firstHolder = res.Holder or res.OwnerScript
+				if not firstHolder then
+					return nil, 0
+				end
+
+				local steps = {{
+					Holder = firstHolder,
+					Edge = res.EdgeText or res.Path,
+					FuncInfo = res.HolderFuncInfo or res.FuncInfo,
+					OwnerScript = res.OwnerScript,
+					OwnerHint = res.OwnerHint,
+					Source = res.Source
+				}}
+
+				local score = getResultScore(res)
+				local seen = {}
+				seen[getHolderId(firstHolder)] = true
+
+				local depth = 0
+				while depth < chainDepth do
+					local tail = steps[#steps]
+					if tail.OwnerScript then
+						break
+					end
+
+					local holder = tail.Holder
+					local holderType = type(holder)
+					if holderType ~= "table" and holderType ~= "function" and holderType ~= "thread" then
+						break
+					end
+
+					local retainers = findDirectRetainers(holder)
+					local nextRetainer = nil
+					for _, cand in ipairs(retainers) do
+						local id = getHolderId(cand.Holder)
+						if not seen[id] then
+							nextRetainer = cand
+							break
+						end
+					end
+
+					if not nextRetainer then
+						break
+					end
+
+					seen[getHolderId(nextRetainer.Holder)] = true
+					steps[#steps + 1] = {
+						Holder = nextRetainer.Holder,
+						Edge = nextRetainer.Edge,
+						FuncInfo = nextRetainer.FuncInfo,
+						OwnerScript = nextRetainer.OwnerScript,
+						OwnerHint = nextRetainer.OwnerHint,
+						Source = nextRetainer.Kind
+					}
+					score = score + (nextRetainer.Score or 0)
+					depth = depth + 1
+				end
+
+				local lines = {safePath(target)}
+				for _, step in ipairs(steps) do
+					lines[#lines + 1] = "  <- " .. tostring(step.Edge) .. " in " .. describeHolder(step.Holder, step.FuncInfo, step.OwnerScript, step.OwnerHint, step.Source)
+				end
+
+				local last = steps[#steps]
+				if last and last.OwnerScript then
+					local ownerLabel = safePath(last.OwnerScript)
+					local holderLabel = describeHolder(last.Holder, last.FuncInfo, last.OwnerScript, last.OwnerHint, last.Source)
+					if holderLabel ~= ownerLabel and holderLabel ~= ownerLabel .. ".env" then
+						lines[#lines + 1] = "  <- owner " .. ownerLabel
+					end
+					score = score + 40
+				elseif last and last.OwnerHint and last.OwnerHint ~= "" then
+					lines[#lines + 1] = "  <- owner " .. tostring(last.OwnerHint)
+					score = score + 10
+				end
+
+				return table.concat(lines, "\n"), score
+			end
+
+			local function buildMockCfgSummary()
+				if resultCount == 0 then
+					return "Retention chain\n  (no candidates found)"
+				end
+
+				local ranked = {}
+				local seenText = {}
+
+				for i = 1, resultCount do
+					local res = resultBuffer[i]
+					local chainText, score = buildRetentionChain(res)
+					if chainText and not seenText[chainText] then
+						seenText[chainText] = true
+						ranked[#ranked + 1] = {
+							Text = chainText,
+							Score = score,
+							Result = res
+						}
+					end
+				end
+
+				if #ranked == 0 then
+					return "Retention chain\n  (no candidates found)"
+				end
+
+				table.sort(ranked, function(a, b)
+					if a.Score ~= b.Score then
+						return a.Score > b.Score
+					end
+					return a.Text < b.Text
+				end)
+
+				local lines = {"Retention chain"}
+				local maxChains = math.min(2, #ranked)
+
+				for i = 1, maxChains do
+					lines[#lines + 1] = ("[%d]"):format(i)
+					for piece in string.gmatch(ranked[i].Text, "[^\n]+") do
+						lines[#lines + 1] = "  " .. piece
+					end
+					if i < maxChains then
+						lines[#lines + 1] = ""
+					end
+				end
+
+				return table.concat(lines, "\n")
+			end
+			
 			local function topYield()
 				topIter = topIter + 1
 				if topIter % 50 == 0 then
@@ -1545,7 +2059,6 @@ local function main()
 				end
 			end
 
-			local renderCon
 			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
 				if not scrollFrame.Parent then
 					renderCon:Disconnect()
@@ -1553,15 +2066,19 @@ local function main()
 				end
 
 				local batch = 0
-				while rendered < resultCount and batch < RENDER_PER_FRAME do
+				while rendered < resultCount and batch < rpf do
 					rendered = rendered + 1
 					batch = batch + 1
 					local i = rendered
 					local res = resultBuffer[i]
 
 					local displayText = "[" .. res.Source .. "] " .. res.Path
-					if res.FuncInfo then
-						displayText = displayText .. "  (" .. res.FuncInfo .. ")"
+					local ownerLabel = describeOwner(res.OwnerScript, res.OwnerHint, res.FuncInfo)
+					if ownerLabel ~= "unknown runtime owner" then
+						displayText = displayText .. "  <- " .. ownerLabel
+					end
+					if res.FuncInfo and res.FuncInfo.Display then
+						displayText = displayText .. "  (" .. res.FuncInfo.Display .. ")"
 					end
 					copyLines[i] = displayText
 
@@ -1618,8 +2135,19 @@ local function main()
 						local tbls = filtergc("table", { Keys = {target} })
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
-								if v == target then
-									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
+								if k == target then
+									local tableScript, tableHint = inferScriptFromTable(tbl)
+									addResult(
+										"filtergc",
+										"table[" .. i .. "].<key>",
+										k,
+										nil,
+										tableScript,
+										tableHint or "filtergc table",
+										tbl,
+										".<key>",
+										nil
+									)
 								end
 							end
 							topYield()
@@ -1632,7 +2160,18 @@ local function main()
 						for i, tbl in ipairs(tbls) do
 							for k, v in pairs(tbl) do
 								if v == target then
-									addResult("filtergc", "table[" .. i .. "][" .. tostring(k) .. "]", v, nil)
+									local tableScript, tableHint = inferScriptFromTable(tbl)
+									addResult(
+										"filtergc",
+										"table[" .. i .. "][" .. tostring(k) .. "]",
+										v,
+										nil,
+										tableScript,
+										tableHint or "filtergc table",
+										tbl,
+										"[" .. tostring(k) .. "]",
+										nil
+									)
 								end
 							end
 							topYield()
@@ -1644,10 +2183,22 @@ local function main()
 						local fns = filtergc("function", { Upvalues = {target} })
 						for i, fn in ipairs(fns) do
 							local ok2, ups = pcall(getupvalues, fn)
+							local fnInfo = getFnInfo(fn)
+							local fnOwner, fnOwnerHint = inferScriptFromFunction(fn)
 							if ok2 and ups then
 								for ui, uv in pairs(ups) do
 									if uv == target then
-										addResult("filtergc", "function[" .. i .. "].upval[" .. ui .. "]", uv, getFuncInfo(fn))
+										addResult(
+											"filtergc",
+											"function[" .. i .. "].upval[" .. ui .. "]",
+											uv,
+											fnInfo,
+											fnOwner,
+											fnOwnerHint or ("filtergc function[" .. i .. "]"),
+											fn,
+											"upval[" .. ui .. "]",
+											fnInfo
+										)
 									end
 								end
 							end
@@ -1660,7 +2211,7 @@ local function main()
 						local gc = getgc(true)
 						for i, v in ipairs(gc) do
 							scanOps = 0
-							scanValue(v, "getgc", "gc[" .. i .. "]", 0)
+							scanValue(v, "getgc", "gc[" .. i .. "]", 0, nil, "gc[" .. i .. "]")
 							topYield()
 						end
 					end)
@@ -1675,8 +2226,22 @@ local function main()
 							if signal then
 								local conns = getconnections(signal)
 								for ci, conn in ipairs(conns) do
-									local fi = conn.Function and getFuncInfo(conn.Function) or nil
-									addResult("connection", sigName .. "[" .. ci .. "]", conn.Function, fi)
+									local fi = conn.Function and getFnInfo(conn.Function) or nil
+									local ownerScript, ownerHint
+									if conn.Function then
+										ownerScript, ownerHint = inferScriptFromFunction(conn.Function)
+									end
+									addResult(
+										"connection",
+										sigName .. "[" .. ci .. "]",
+										conn.Function,
+										fi,
+										ownerScript,
+										ownerHint or ("signal " .. sigName),
+										conn.Function,
+										sigName .. "[" .. ci .. "]",
+										fi
+									)
 								end
 							end
 						end)
@@ -1689,8 +2254,10 @@ local function main()
 					for ti, thread in ipairs(threads) do
 						local ok, tEnv = pcall(getfenv, thread)
 						if ok and type(tEnv) == "table" then
+							local threadScript = _getscriptfromthread(thread)
+							local threadHint = threadScript and safePath(threadScript) or ("thread[" .. ti .. "]")
 							scanOps = 0
-							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0)
+							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0, threadScript, threadHint)
 						end
 						topYield()
 					end
@@ -1699,14 +2266,15 @@ local function main()
 
 				pcall(function()
 					local modules = _getloadedmodules()
-					for mi, mod in ipairs(modules) do
+					for _, mod in ipairs(modules) do
 						pcall(function()
 							local senv = _getsenv(mod)
 							if senv then
 								local modName = mod.Name
+								local modPath = safePath(mod)
 								for k, v in pairs(senv) do
 									scanOps = 0
-									scanValue(v, "module", modName .. "." .. tostring(k), 0)
+									scanValue(v, "module", modName .. "." .. tostring(k), 0, mod, modPath)
 								end
 							end
 						end)
@@ -1722,21 +2290,45 @@ local function main()
 							pcall(function()
 								local cb = _getcallbackvalue(target, cbName)
 								if cb then
-									addResult("callback", cbName, cb, getFuncInfo(cb))
+									local cbInfo = getFnInfo(cb)
+									local ownerScript, ownerHint = inferScriptFromFunction(cb)
+									addResult(
+										"callback",
+										cbName,
+										cb,
+										cbInfo,
+										ownerScript,
+										ownerHint or cbName,
+										cb,
+										cbName,
+										cbInfo
+									)
 								end
 							end)
 						end
 					end)
 				end
 
+				local okChain, chainText = pcall(buildMockCfgSummary)
+				cfgLabel.Text = okChain and chainText or "Retention chain\n  (failed to build summary)"
 				scanning = false
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
 				if env.setclipboard then
-					env.setclipboard(table.concat(copyLines, "\n"))
+					local raw = table.concat(copyLines, "\n")
+					local payload = cfgLabel.Text or "CFG\n  (unavailable)"
+					if raw ~= "" then
+						payload = payload .. "\n\nRaw xrefs\n" .. raw
+					end
+
+					env.setclipboard(payload)
 					copyBtn.Text = "Copied!"
-					task.delay(1.5, function() pcall(function() copyBtn.Text = "Copy All" end) end)
+					task.delay(1.5, function()
+						pcall(function()
+							copyBtn.Text = "Copy All"
+						end)
+					end)
 				end
 			end)
 		end})
