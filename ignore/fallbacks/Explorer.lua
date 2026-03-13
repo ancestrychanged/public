@@ -1737,7 +1737,10 @@ local function main()
 							break
 						end
 
-						topYield()
+						if budget.count % 10 == 0 then
+							task.wait()
+						end
+
 						local kStr = tostring(k)
 
 						if v == target then
