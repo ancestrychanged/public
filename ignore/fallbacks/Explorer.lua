@@ -53,10 +53,7 @@ local function main()
 
 	local iconData
 	local remote_blocklist = {} -- list of remotes beng blocked, k = the remote instance, v = their old function :3
-	local __DEX_XREF_MARKER = newproxy(false)
-	local hideCoreScripts = true
 	nodes = nodes or {}
-	nodes["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
 
 	addObject = function(root)
 		if nodes[root] then return end
@@ -1503,7 +1500,7 @@ local function main()
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(160, 60, 60),
 				BorderSizePixel = 0,
-				Position = UDim2.new(1, -290, 0, 2),
+				Position = UDim2.new(1, -212, 0, 2),
 				Size = UDim2.new(0, 74, 0, 16),
 				Font = Enum.Font.SourceSans,
 				Text = "Stop scan",
@@ -1528,21 +1525,6 @@ local function main()
 			})
 			Instance.new("UICorner", dumpBtn).CornerRadius = UDim.new(0.02, 0)
 			Lib.ButtonAnim(dumpBtn, {Mode = 2})
-
-			local coreFilterBtn = createSimple("TextButton", {
-				Parent = statusLabel,
-				BackgroundColor3 = Color3.fromRGB(60, 120, 60),
-				BorderSizePixel = 0,
-				Position = UDim2.new(1, -378, 0, 2),
-				Size = UDim2.new(0, 84, 0, 16),
-				Font = Enum.Font.SourceSans,
-				Text = "Core: Hidden",
-				TextColor3 = Color3.fromRGB(200, 200, 200),
-				TextSize = 12,
-				AutoButtonColor = false
-			})
-			Instance.new("UICorner", coreFilterBtn).CornerRadius = UDim.new(0.02, 0)
-			Lib.ButtonAnim(coreFilterBtn, {Mode = 2})
 
 			local cfgFrame = createSimple("Frame", {
 				Parent = content,
@@ -1603,14 +1585,6 @@ local function main()
 			local totalPhases = 7
 			local phaseWeights = {0.12, 0.12, 0.12, 0.18, 0.22, 0.18, 0.06}
 			local phaseBase = 0
-			local allEntryFrames = {} -- tracks rendered entry frames + their result data for filtering
-
-			resultBuffer["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
-			resultSeen["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
-			copyLines["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
-			scanTasks["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
-			rankedChains["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
-			chainCache["__DEX_XREF_MARKER"] = __DEX_XREF_MARKER
 
 			local lastYieldClock = os.clock()
 			local waiting = 0.030
@@ -1658,25 +1632,6 @@ local function main()
 
 				local ok2, fullName = pcall(inst.GetFullName, inst)
 				return ok2 and fullName or tostring(inst)
-			end
-
-			local function isCoreScriptPath(inst)
-				if typeof(inst) ~= "Instance" then return false end
-				local ok, fullName = pcall(inst.GetFullName, inst)
-				if not ok or type(fullName) ~= "string" then return false end
-				if fullName:find("^CoreGui") then return true end
-				if fullName:find("^CorePackages") then return true end
-				local ok2, isCore = pcall(function()
-					return inst:FindFirstAncestorWhichIsA("CoreGui") ~= nil
-				end)
-				if ok2 and isCore then return true end
-				return false
-			end
-
-			local function isDexInternal(tbl)
-				if type(tbl) ~= "table" then return false end
-				local ok, val = pcall(rawget, tbl, "__DEX_XREF_MARKER")
-				return ok and val == __DEX_XREF_MARKER
 			end
 
 			local function getFnInfo(fn)
@@ -1867,25 +1822,10 @@ local function main()
 			end
 
 			local function addResult(source, path, value, holder, seedSteps, baseScore, weakReason)
-				if isDexInternal(holder) then return end
-				if isDexInternal(value) then return end
-
 				local key = tostring(source) .. "|" .. tostring(path) .. "|" .. getHolderId(holder or value)
 				if resultSeen[key] then
 					return
 				end
-
-				local resultIsCoreScript = false
-				if seedSteps then
-					for _, step in ipairs(seedSteps) do
-						if step.RootScript and isCoreScriptPath(step.RootScript) then
-							resultIsCoreScript = true
-							break
-						end
-					end
-				end
-
-				if hideCoreScripts and resultIsCoreScript then return end
 
 				resultSeen[key] = true
 				resultCount = resultCount + 1
@@ -1896,8 +1836,7 @@ local function main()
 					Holder = holder,
 					SeedSteps = seedSteps or {},
 					BaseScore = baseScore or 0,
-					WeakReason = weakReason,
-					IsCoreScript = resultIsCoreScript
+					WeakReason = weakReason
 				}
 			end
 
@@ -1912,10 +1851,6 @@ local function main()
 
 				if type(val) == "table" then
 					if visited[val] then
-						return
-					end
-					
-					if isDexInternal(val) then
 						return
 					end
 					visited[val] = true
@@ -2194,21 +2129,19 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Values = {node}})
 					for _, tbl in ipairs(tbls) do
-						if not isDexInternal(tbl) then
-							for k, v in pairs(tbl) do
-								if v == node then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									push(makeStep(
-										tbScritp and "table-script" or "table-value",
-										tbl,
-										"[" .. tostring(k) .. "]",
-										labelForTable(tbl, tbScritp),
-										tbScritp and 88 or 54,
-										tbScritp,
-										nil
-									))
-									break
-								end
+						for k, v in pairs(tbl) do
+							if v == node then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								push(makeStep(
+									tbScritp and "table-script" or "table-value",
+									tbl,
+									"[" .. tostring(k) .. "]",
+									labelForTable(tbl, tbScritp),
+									tbScritp and 88 or 54,
+									tbScritp,
+									nil
+								))
+								break
 							end
 						end
 
@@ -2220,21 +2153,19 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {node}})
 					for _, tbl in ipairs(tbls) do
-						if not isDexInternal(tbl) then
-							for k, _ in pairs(tbl) do
-								if k == node then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									push(makeStep(
-										tbScritp and "table-script" or "table-key",
-										tbl,
-										".<key>",
-										labelForTable(tbl, tbScritp),
-										tbScritp and 84 or 48,
-										tbScritp,
-										nil
-									))
-									break
-								end
+						for k, _ in pairs(tbl) do
+							if k == node then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								push(makeStep(
+									tbScritp and "table-script" or "table-key",
+									tbl,
+									".<key>",
+									labelForTable(tbl, tbScritp),
+									tbScritp and 84 or 48,
+									tbScritp,
+									nil
+								))
+								break
 							end
 						end
 
@@ -2521,15 +2452,13 @@ local function main()
 						Size = UDim2.new(1, 0, 0, 20),
 						Font = Enum.Font.Code,
 						Text = "  " .. displayText,
-						TextColor3 = res.IsCoreScript and Color3.fromRGB(130, 130, 160) or Color3.fromRGB(190, 190, 190),
+						TextColor3 = Color3.fromRGB(190, 190, 190),
 						TextSize = 12,
 						TextXAlignment = Enum.TextXAlignment.Left,
 						AutoButtonColor = false,
 						LayoutOrder = i,
 						TextTruncate = Enum.TextTruncate.AtEnd
 					})
-
-					allEntryFrames[i] = {Frame = entry, IsCoreScript = res.IsCoreScript}
 
 					entry.MouseEnter:Connect(function()
 						entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
@@ -2585,31 +2514,29 @@ local function main()
 					local tbls = filtergc("table", {Keys = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
-						if not isDexInternal(tbl) then
-							for k, _ in pairs(tbl) do
-								if k == target then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									addResult(
-										"filtergc",
-										"table[" .. i .. "].<key>",
-										target,
-										tbl,
-										{
-											makeStep(
-												tbScritp and "table-script" or "table-key",
-												tbl,
-												".<key>",
-												labelForTable(tbl, tbScritp),
-												tbScritp and 84 or 48,
-												tbScritp,
-												nil
-											)
-										},
-										tbScritp and 84 or 48,
-										tbScritp and nil or "anonymous table"
-									)
-									break
-								end
+						for k, _ in pairs(tbl) do
+							if k == target then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								addResult(
+									"filtergc",
+									"table[" .. i .. "].<key>",
+									target,
+									tbl,
+									{
+										makeStep(
+											tbScritp and "table-script" or "table-key",
+											tbl,
+											".<key>",
+											labelForTable(tbl, tbScritp),
+											tbScritp and 84 or 48,
+											tbScritp,
+											nil
+										)
+									},
+									tbScritp and 84 or 48,
+									tbScritp and nil or "anonymous table"
+								)
+								break
 							end
 						end
 						topYield(i, total)
@@ -2622,31 +2549,29 @@ local function main()
 					local tbls = filtergc("table", {Values = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
-						if not isDexInternal(tbl) then
-							for k, v in pairs(tbl) do
-								if v == target then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									addResult(
-										"filtergc",
-										"table[" .. i .. "][" .. tostring(k) .. "]",
-										target,
-										tbl,
-										{
-											makeStep(
-												tbScritp and "table-script" or "table-value",
-												tbl,
-												"[" .. tostring(k) .. "]",
-												labelForTable(tbl, tbScritp),
-												tbScritp and 88 or 54,
-												tbScritp,
-												nil
-											)
-										},
-										tbScritp and 88 or 54,
-										tbScritp and nil or "anonymous table"
-									)
-									break
-								end
+						for k, v in pairs(tbl) do
+							if v == target then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								addResult(
+									"filtergc",
+									"table[" .. i .. "][" .. tostring(k) .. "]",
+									target,
+									tbl,
+									{
+										makeStep(
+											tbScritp and "table-script" or "table-value",
+											tbl,
+											"[" .. tostring(k) .. "]",
+											labelForTable(tbl, tbScritp),
+											tbScritp and 88 or 54,
+											tbScritp,
+											nil
+										)
+									},
+									tbScritp and 88 or 54,
+									tbScritp and nil or "anonymous table"
+								)
+								break
 							end
 						end
 						topYield(i, total)
@@ -2771,7 +2696,6 @@ local function main()
 					local scannedThreads = {}
 
 					local function scanOneThread(threadObj, ti, threadScript)
-						if hideCoreScripts and threadScript and isCoreScriptPath(threadScript) then return end
 						if threadObj and not scannedThreads[threadObj] then
 							scannedThreads[threadObj] = true
 
@@ -2829,13 +2753,11 @@ local function main()
 					local modules = getloadedmodules()
 					local total = #modules
 					for mi, mod in ipairs(modules) do
-						if not (hideCoreScripts and isCoreScriptPath(mod)) then
-							local okEnv, senv = pcall(getsenv, mod)
-							if okEnv and type(senv) == "table" then
-								local visited = {}
-								local budget = {count = 0}
-								scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
-							end
+						local okEnv, senv = pcall(getsenv, mod)
+						if okEnv and type(senv) == "table" then
+							local visited = {}
+							local budget = {count = 0}
+							scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
 						end
 						topYield(mi, total)
 					end
@@ -2894,17 +2816,6 @@ local function main()
 				
 				statusLabel.Text = ("  %d xref(s) - scan stopped"):format(resultCount)
 				progressBarFill.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-			end)
-
-			coreFilterBtn.MouseButton1Click:Connect(function()
-				hideCoreScripts = not hideCoreScripts
-				if hideCoreScripts then
-					coreFilterBtn.Text = "Core: Hidden"
-					coreFilterBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 60)
-				else
-					coreFilterBtn.Text = "Core: Shown"
-					coreFilterBtn.BackgroundColor3 = Color3.fromRGB(120, 80, 60)
-				end
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
