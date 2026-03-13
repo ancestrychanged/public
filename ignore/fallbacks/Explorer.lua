@@ -1428,6 +1428,25 @@ local function main()
 				getgenv().__DEX_TABLE_INSPECTOR = inspector
 			end
 
+			local signalsAPI
+			do
+				signalsAPI = getgenv().__DEX_SIGNALS_API
+
+				if not signalsAPI then
+					if isfile("SignalsAndConnections.lua") then
+						local sss, chunk = pcall(loadfile, "SignalsAndConnections.lua")
+						if sss and chunk then
+							local okRun, loaded = pcall(chunk)
+							if okRun and type(loaded) == "table" then
+								signalsAPI = loaded
+							end
+						end
+					end
+				end
+
+				getgenv().__DEX_SIGNALS_API = signalsAPI
+			end
+
 			local window = Lib.Window.new()
 			window:SetTitle("Xrefs: " .. tostring(target) .. " (scanning...)")
 			window:Resize(520, 360)
@@ -1568,7 +1587,7 @@ local function main()
 			local scanProgress = 0
 			local phasesCompleted = 0
 			local totalPhases = 7
-			local phaseWeights = {0.15, 0.15, 0.15, 0.05, 0.25, 0.20, 0.05}
+			local phaseWeights = {0.12, 0.12, 0.12, 0.18, 0.22, 0.18, 0.06}
 			local phaseBase = 0
 
 			local lastYieldClock = os.clock()
@@ -1980,8 +1999,11 @@ local function main()
 
 			local function getSignalCandidates(obj)
 				local out = {}
+				local seen = {}
 
 				local function add(name)
+					if seen[name] then return end
+					seen[name] = true
 					local ok, signal = pcall(function()
 						return obj[name]
 					end)
@@ -1993,20 +2015,33 @@ local function main()
 					end
 				end
 
-				add("Changed")
-				add("ChildAdded")
-				add("ChildRemoved")
-				add("AncestryChanged")
-				add("Destroying")
-				add("DescendantAdded")
-				add("DescendantRemoving")
-
-				if typeof(obj) == "Instance" then
-					if obj:IsA("RemoteEvent") then
-						add("OnClientEvent")
+				if signalsAPI and signalsAPI.Events and typeof(obj) == "Instance" then
+					for className, signals in pairs(signalsAPI.Events) do
+						local isA = false
+						pcall(function() isA = obj:IsA(className) end)
+						if isA then
+							for _, sigName in ipairs(signals) do
+								add(sigName)
+							end
+						end
 					end
-					if obj:IsA("BindableEvent") then
-						add("Event")
+				else
+					-- Fallback: hardcoded common signals if API data unavailable
+					add("Changed")
+					add("ChildAdded")
+					add("ChildRemoved")
+					add("AncestryChanged")
+					add("Destroying")
+					add("DescendantAdded")
+					add("DescendantRemoving")
+
+					if typeof(obj) == "Instance" then
+						if obj:IsA("RemoteEvent") then
+							add("OnClientEvent")
+						end
+						if obj:IsA("BindableEvent") then
+							add("Event")
+						end
 					end
 				end
 
