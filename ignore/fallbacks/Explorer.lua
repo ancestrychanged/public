@@ -1481,6 +1481,21 @@ local function main()
 			Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0.02, 0)
 			Lib.ButtonAnim(copyBtn, {Mode = 2})
 
+			local stopBtn = createSimple("TextButton", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(160, 60, 60),
+				BorderSizePixel = 0,
+				Position = UDim2.new(1, -212, 0, 2),
+				Size = UDim2.new(0, 74, 0, 16),
+				Font = Enum.Font.SourceSans,
+				Text = "Stop scan",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 12,
+				AutoButtonColor = false
+			})
+			Instance.new("UICorner", stopBtn).CornerRadius = UDim.new(0.02, 0)
+			Lib.ButtonAnim(stopBtn, {Mode = 2})
+
 			local dumpBtn = createSimple("TextButton", {
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
@@ -1543,6 +1558,8 @@ local function main()
 			local resultCount = 0
 			local rendered = 0
 			local scanning = true
+			local scanCancelled = false
+			local scanTasks = {}
 			local renderPerFrame = 12
 			local rankedChains = {}
 			local weakTableCandidate = nil
@@ -1555,7 +1572,12 @@ local function main()
 			local phaseBase = 0
 
 			local lastYieldClock = os.clock()
-			local YIELD_BUDGET = 0.030 
+			local waiting = 0.030
+
+			local function spawnScanTask(fn)
+				local t = task.spawn(fn)
+				table.insert(scanTasks, t)
+			end
 
 			local function topYield(iterInPhase, totalInPhase)
 				if not scrollFrame.Parent then
@@ -1568,7 +1590,7 @@ local function main()
 					scanProgress = phaseBase + phaseWeight * (iterInPhase / totalInPhase)
 				end
 
-				if os.clock() - lastYieldClock >= YIELD_BUDGET then
+				if os.clock() - lastYieldClock >= waiting then
 					task.wait()
 					lastYieldClock = os.clock()
 				end
@@ -1992,6 +2014,7 @@ local function main()
 			end
 
 			local function getDirectRetainers(node)
+				if scanCancelled then return {} end
 				local cacheKey = getHolderId(node)
 				local cached = chainCache[cacheKey]
 				if cached then
@@ -2362,7 +2385,7 @@ local function main()
 						math.floor(160 - 40 * pct),
 						math.floor(255 - 155 * pct)
 					)
-					statusLabel.Text = ("  %d xref(s) — scanning... %.2f%%"):format(rendered, pct * 100)
+					statusLabel.Text = ("  %d xref(s) - scanning... %.2f%%"):format(rendered, pct * 100)
 				end
 
 				if not scanning and rendered >= resultCount then
@@ -2390,7 +2413,7 @@ local function main()
 			end
 
 			
-			task.spawn(function()
+			spawnScanTask(function()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {target}})
 					local total = #tbls
@@ -2501,7 +2524,7 @@ local function main()
 			end)
 
 			
-			task.spawn(function()
+			spawnScanTask(function()
 				
 				while phasesCompleted < 3 do task.wait() end
 
@@ -2552,7 +2575,7 @@ local function main()
 			end)
 
 			
-			task.spawn(function()
+			spawnScanTask(function()
 				while phasesCompleted < 4 do task.wait() end
 
 				pcall(function()
@@ -2609,7 +2632,7 @@ local function main()
 			end)
 
 			
-			task.spawn(function()
+			spawnScanTask(function()
 				while phasesCompleted < 5 do task.wait() end
 
 				pcall(function()
@@ -2629,7 +2652,7 @@ local function main()
 			end)
 
 			
-			task.spawn(function()
+			spawnScanTask(function()
 				while phasesCompleted < 6 do task.wait() end
 
 				local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
@@ -2664,6 +2687,21 @@ local function main()
 				advancePhase()
 
 				finalizeScan()
+			end)
+
+			stopBtn.MouseButton1Click:Connect(function()
+				if not scanning then return end
+				scanCancelled = true
+				
+				for _, t in ipairs(scanTasks) do
+					pcall(task.cancel, t)
+				end
+				
+				stopBtn.Visible = false
+				finalizeScan()
+				
+				statusLabel.Text = ("  %d xref(s) - scan stopped"):format(resultCount)
+				progressBarFill.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
