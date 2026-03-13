@@ -1706,6 +1706,7 @@ local function main()
 					local src = info.short_src or info.source or "?"
 					local line = info.linedefined or info.currentline or "?"
 					return {
+						[xrefIgnore] = true,
 						Display = src .. ":" .. tostring(line),
 						ShortSource = src,
 						Source = info.source,
@@ -1889,6 +1890,7 @@ local function main()
 			end
 
 			local function addResult(source, path, value, holder, seedSteps, baseScore, weakReason)
+				if seedSteps then seedSteps[xrefIgnore] = true end
 				if isDexInternal(holder, value) then return end
 
 				local key = tostring(source) .. "|" .. tostring(path) .. "|" .. getHolderId(holder or value)
@@ -2115,7 +2117,9 @@ local function main()
 					local frames = debug.getcallstack(threadObj)
 
 					if type(frames) == "table" then
+						frames[xrefIgnore] = true
 						for level, frame in pairs(frames) do
+							if type(frame) == "table" then frame[xrefIgnore] = true end
 							local frameLocals = frame
 							local frameInfo = nil
 
@@ -2152,6 +2156,7 @@ local function main()
 					for level = 0, 20 do
 						local frameLocals = debug.getstack(threadObj, level)
 						if type(frameLocals) ~= "table" then
+							frameLocals[xrefIgnore] = true
 							break
 						end
 
@@ -2217,8 +2222,8 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Values = {node}})
 					for _, tbl in ipairs(tbls) do
+						if isDexInternal(tbl) then continue end
 						for k, v in pairs(tbl) do
-							if isDexInternal(tbl) then continue end
 							if v == node then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
 								push(makeStep(
@@ -2393,13 +2398,13 @@ local function main()
 					return nil, 0, nil
 				end
 
-				local steps = {}
+				local steps = {[xrefIgnore] = true}
 				for i = 1, #res.SeedSteps do
 					steps[i] = res.SeedSteps[i]
 				end
 
 				local score = res.BaseScore or 0
-				local seen = {}
+				local seen = {[xrefIgnore] = true}
 				local tail = steps[#steps] and steps[#steps].Holder or nil
 				if tail then
 					seen[getHolderId(tail)] = true
@@ -2455,11 +2460,15 @@ local function main()
 					return "Chain\n  (no live retainers found)"
 				end
 
-				local seenText = {}
+				local seenText = {[xrefIgnore] = true}
+				local sortedBuf = {[xrefIgnore] = true}
 
-				local sortedBuf = {}
-				for i=1, resultCount do sortedBuf[i] = resultBuffer[i] end
+				for i = 1, resultCount do
+					sortedBuf[i] = resultBuffer[i]
+				end
+
 				table.sort(sortedBuf, function(a, b) return (a.BaseScore or 0) > (b.BaseScore or 0) end)
+				
 				local maxToProcess = math.min(resultCount, 30)
 
 				for i = 1, maxToProcess do
