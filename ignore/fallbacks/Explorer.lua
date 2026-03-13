@@ -2218,6 +2218,7 @@ local function main()
 					local tbls = filtergc("table", {Values = {node}})
 					for _, tbl in ipairs(tbls) do
 						for k, v in pairs(tbl) do
+							if isDexInternal(tbl) then continue end
 							if v == node then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
 								push(makeStep(
@@ -2241,6 +2242,7 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {node}})
 					for _, tbl in ipairs(tbls) do
+						if isDexInternal(tbl) then continue end
 						for k, _ in pairs(tbl) do
 							if k == node then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
