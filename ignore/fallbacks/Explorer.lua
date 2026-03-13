@@ -1366,6 +1366,8 @@ local function main()
 			local _getconnections = getconnections or get_signal_cons
 			local _getcallbackvalue = getcallbackvalue or getcallbackmember
 			local _getreg = getreg or getregistry or (env and (env.getreg or env.getregistry))
+			local _getstack = dbg.getstack or getstack
+			local _getcallstack = dbg.getcallstack or getcallstack
 
 			local _getallthreads = getallthreads or function()
 				local threads, seen = {}, {}
@@ -1565,10 +1567,10 @@ local function main()
 
 			window:ShowAndFocus()
 
-			local MAX_DEPTH = 4
-			local SCAN_BUDGET = 12000
-			local CHAIN_DEPTH = 6
-			local CHAIN_LIMIT = 32
+			local mDepth = 4
+			local howmuch = 12000
+			local cDepth = 6
+			local cLimit = 32
 
 			local resultBuffer = {}
 			local resultSeen = {}
@@ -1743,11 +1745,11 @@ local function main()
 			end
 
 			local function scanValue(val, source, path, depth, ownerScript, ownerHint, visited, budget)
-				if budget.count >= SCAN_BUDGET then
+				if budget.count >= howmuch then
 					return
 				end
 
-				if depth > MAX_DEPTH then
+				if depth > mDepth then
 					return
 				end
 
@@ -1759,7 +1761,7 @@ local function main()
 
 					for k, v in pairs(val) do
 						budget.count = budget.count + 1
-						if budget.count >= SCAN_BUDGET then
+						if budget.count >= howmuch then
 							break
 						end
 
@@ -1855,7 +1857,7 @@ local function main()
 
 						for ui, uv in pairs(ups) do
 							budget.count = budget.count + 1
-							if budget.count >= SCAN_BUDGET then
+							if budget.count >= howmuch then
 								break
 							end
 
@@ -1885,6 +1887,101 @@ local function main()
 						end
 					end
 				end
+			end
+
+			local function scanThreadStack(threadObj, ti, threadScript)
+				if not (_getstack or _getcallstack) then
+					return
+				end
+
+				local function pushStackHit(frameLabel, localName, frameInfo)
+					local label
+
+					if frameInfo and frameInfo.Display then
+						label = "function " .. frameInfo.Display
+					else
+						label = "stack frame " .. tostring(frameLabel)
+					end
+
+					if threadScript then
+						label = label .. " @ " .. safePath(threadScript)
+					end
+
+					addResult(
+						"thread-stack",
+						"thread[" .. ti .. "].stack[" .. tostring(frameLabel) .. "].local[" .. tostring(localName) .. "]",
+						target,
+						threadObj,
+						{
+							makeStep(
+								"thread-stack-local",
+								nil,
+								"local[" .. tostring(localName) .. "]",
+								label,
+								320,
+								threadScript,
+								frameInfo
+							)
+						},
+						320,
+						nil
+					)
+				end
+
+				pcall(function()
+					local frameReader = _getcallstack or _getstack
+					local okFrames, frames = pcall(frameReader, threadObj)
+
+					if okFrames and type(frames) == "table" then
+						for level, frame in pairs(frames) do
+							local frameLocals = frame
+							local frameInfo = nil
+
+							if type(frame) == "table" then
+								local fn =
+									rawget(frame, "func") or
+									rawget(frame, "closure") or
+									rawget(frame, "fn") or
+									rawget(frame, "function")
+
+								if type(fn) == "function" then
+									frameInfo = getFnInfo(fn)
+								end
+
+								frameLocals =
+									rawget(frame, "locals") or
+									rawget(frame, "stack") or
+									rawget(frame, "values") or
+									frame
+							end
+
+							if type(frameLocals) == "table" then
+								for localName, localValue in pairs(frameLocals) do
+									if localValue == target then
+										pushStackHit(level, localName, frameInfo)
+									end
+								end
+							end
+						end
+
+						return
+					end
+
+					if _getstack then
+						for level = 0, 20 do
+							local okLevel, frameLocals = pcall(_getstack, threadObj, level)
+							if not okLevel or type(frameLocals) ~= "table" then
+								break
+							end
+
+							for localName, localValue in pairs(frameLocals) do
+								if localValue == target then
+									pushStackHit(level, localName, nil)
+								end
+							end
+						end
+					end
+				end)
 			end
 
 			local function getSignalCandidates(obj)
@@ -1959,7 +2056,7 @@ local function main()
 									break
 								end
 							end
-							if #found >= CHAIN_LIMIT then break end
+							if #found >= cLimit then break end
 						end
 					end)
 
@@ -1981,7 +2078,7 @@ local function main()
 									break
 								end
 							end
-							if #found >= CHAIN_LIMIT then break end
+							if #found >= cLimit then break end
 						end
 					end)
 
@@ -2008,7 +2105,7 @@ local function main()
 										end
 									end
 								end
-								if #found >= CHAIN_LIMIT then break end
+								if #found >= cLimit then break end
 							end
 						end)
 					end
@@ -2046,7 +2143,7 @@ local function main()
 								end
 							end
 						end
-						if #found >= CHAIN_LIMIT then break end
+						if #found >= cLimit then break end
 					end
 				end)
 
@@ -2081,7 +2178,7 @@ local function main()
 								end
 							end
 						end
-						if #found >= CHAIN_LIMIT then break end
+						if #found >= cLimit then break end
 					end
 				end)
 
@@ -2123,7 +2220,7 @@ local function main()
 				end
 
 				local depth = 0
-				while tail and depth < CHAIN_DEPTH do
+				while tail and depth < cDepth do
 					local holderType = type(tail)
 					if holderType ~= "table" and holderType ~= "function" and holderType ~= "thread" then
 						break
@@ -2449,13 +2546,16 @@ local function main()
 				pcall(function()
 					local threads = _getallthreads()
 					for ti, threadObj in ipairs(threads) do
+						local threadScript = _getscriptfromthread(threadObj)
+
 						local okEnv, tEnv = pcall(getfenv, threadObj)
 						if okEnv and type(tEnv) == "table" then
-							local threadScript = _getscriptfromthread(threadObj)
 							local visited = {}
 							local budget = {count = 0}
 							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0, threadScript, threadScript and safePath(threadScript) or ("thread[" .. ti .. "]"), visited, budget)
 						end
+
+						scanThreadStack(threadObj, ti, threadScript)
 						topYield()
 					end
 				end)
