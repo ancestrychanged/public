@@ -1737,6 +1737,7 @@ local function main()
 							break
 						end
 
+						topYield()
 						local kStr = tostring(k)
 
 						if v == target then
