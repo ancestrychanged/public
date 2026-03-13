@@ -1605,16 +1605,14 @@ local function main()
 			local lastYieldClock = os.clock()
 			local waiting = 0.030
 
-			-- Ouroboros prevention: marker key to tag scanner-internal tables
-			local DEX_XREF_IGNORE_KEY = "__DEX_XREF_IGNORE"
-			resultBuffer[DEX_XREF_IGNORE_KEY] = true
-			resultSeen[DEX_XREF_IGNORE_KEY] = true
-			copyLines[DEX_XREF_IGNORE_KEY] = true
-			scanTasks[DEX_XREF_IGNORE_KEY] = true
-			rankedChains[DEX_XREF_IGNORE_KEY] = true
-			chainCache[DEX_XREF_IGNORE_KEY] = true
+			local xrefIgnore = "__DEX_XREF_IGNORE"
+			resultBuffer[xrefIgnore] = true
+			resultSeen[xrefIgnore] = true
+			copyLines[xrefIgnore] = true
+			scanTasks[xrefIgnore] = true
+			rankedChains[xrefIgnore] = true
+			chainCache[xrefIgnore] = true
 
-			-- CoreScript detection
 			local coreContainers
 			local function isCorescript(inst)
 				if typeof(inst) ~= "Instance" then return false end
@@ -1630,27 +1628,25 @@ local function main()
 				return false
 			end
 
-			-- Dex self-scan detection
 			local windowGui = window and window.Gui
 			local function isDexInternal(holder, value)
-				-- Skip tables marked as scanner-internal
 				if type(holder) == "table" then
-					local ok, marked = pcall(rawget, holder, DEX_XREF_IGNORE_KEY)
-					if ok and marked then return true end
-				end
-				if type(value) == "table" then
-					local ok, marked = pcall(rawget, value, DEX_XREF_IGNORE_KEY)
+					local ok, marked = pcall(rawget, holder, xrefIgnore)
 					if ok and marked then return true end
 				end
 
-				-- Skip the global nodes table itself
+				if type(value) == "table" then
+					local ok, marked = pcall(rawget, value, xrefIgnore)
+					if ok and marked then return true end
+				end
+
 				if holder == nodes or value == nodes then return true end
 
-				-- Skip Dex's own GUI descendants (xref window UI elements)
 				if windowGui and typeof(holder) == "Instance" then
 					local ok, result = pcall(function() return holder:IsDescendantOf(windowGui) end)
 					if ok and result then return true end
 				end
+
 				if windowGui and typeof(value) == "Instance" then
 					local ok, result = pcall(function() return value:IsDescendantOf(windowGui) end)
 					if ok and result then return true end
@@ -1892,7 +1888,6 @@ local function main()
 			end
 
 			local function addResult(source, path, value, holder, seedSteps, baseScore, weakReason)
-				-- Ouroboros / Dex internal filter
 				if isDexInternal(holder, value) then return end
 
 				local key = tostring(source) .. "|" .. tostring(path) .. "|" .. getHolderId(holder or value)
@@ -1900,7 +1895,6 @@ local function main()
 					return
 				end
 
-				-- Determine CoreScript origin from seed steps
 				local isCoreResult = false
 				if seedSteps then
 					for _, step in ipairs(seedSteps) do
@@ -2514,7 +2508,7 @@ local function main()
 				return table.concat(lines, "\n")
 			end
 
-			local renderedEntries = {} -- stores GUI entry objects for rebuild
+			local renderedEntries = {}
 
 			local function makeEntryText(res)
 				local firstStep = res.SeedSteps and res.SeedSteps[1]
@@ -2533,10 +2527,10 @@ local function main()
 			end
 
 			local function rebuildRenderedList()
-				-- Clear existing entries from the scrollFrame
 				for _, entry in ipairs(renderedEntries) do
 					pcall(function() entry:Destroy() end)
 				end
+
 				table.clear(renderedEntries)
 				table.clear(copyLines)
 
@@ -2582,7 +2576,6 @@ local function main()
 				end
 			end
 
-			-- CoreScript toggle button handler
 			coreToggleBtn.MouseButton1Click:Connect(function()
 				showCoreScripts = not showCoreScripts
 				coreToggleBtn.Text = showCoreScripts and "Core: ON" or "Core: OFF"
@@ -2607,9 +2600,8 @@ local function main()
 					local res = resultBuffer[i]
 					local displayText = makeEntryText(res)
 					
-					-- Skip CoreScript results if toggle is OFF
 					if not shouldShowResult(res) then
-						-- Still counted but not rendered
+						-- todo
 					else
 						local vi = #renderedEntries + 1
 						copyLines[vi] = displayText
