@@ -1737,7 +1737,7 @@ local function main()
 							break
 						end
 
-						if budget.count % 10 == 0 then
+						if budget.count % 100 == 0 then
 							task.wait()
 						end
 
@@ -2247,6 +2247,8 @@ local function main()
 							WeakTable = weakTable
 						}
 					end
+					
+					topYield(i, resultCount)
 				end
 
 				if #rankedChains == 0 then
