@@ -1877,6 +1877,7 @@ local function main()
 
 			local function makeStep(kind, holder, edge, label, score, rootScript, funcInfo)
 				return {
+					[xrefIgnore] = true,
 					Kind = kind,
 					Holder = holder,
 					Edge = edge,
@@ -1915,6 +1916,7 @@ local function main()
 				resultSeen[key] = true
 				resultCount = resultCount + 1
 				resultBuffer[resultCount] = {
+					[xrefIgnore] = true, 
 					Source = source,
 					Path = path,
 					Value = value,
@@ -2201,7 +2203,7 @@ local function main()
 					return cached
 				end
 
-				local found = {}
+				local found = {[xrefIgnore] = true}
 				local seen = {}
 
 				local function push(step)
