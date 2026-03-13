@@ -2284,11 +2284,13 @@ local function main()
 
 				local seenText = {}
 
-				table.sort(resultBuffer, function(a, b) return (a.BaseScore or 0) > (b.BaseScore or 0) end)
+				local sortedBuf = {}
+				for i=1, resultCount do sortedBuf[i] = resultBuffer[i] end
+				table.sort(sortedBuf, function(a, b) return (a.BaseScore or 0) > (b.BaseScore or 0) end)
 				local maxToProcess = math.min(resultCount, 30)
 
 				for i = 1, maxToProcess do
-					local text, score, weakTable = buildRetentionChain(resultBuffer[i])
+					local text, score, weakTable = buildRetentionChain(sortedBuf[i])
 					if text and not seenText[text] then
 						seenText[text] = true
 						rankedChains[#rankedChains + 1] = {
@@ -2580,7 +2582,7 @@ local function main()
 							addResult(
 								"connection",
 								"signal." .. sigData.Name .. "[" .. ci .. "]",
-								fn or conn,
+								target,
 								fn or conn,
 								{
 									makeStep(
