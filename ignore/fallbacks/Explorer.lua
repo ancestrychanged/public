@@ -1655,6 +1655,19 @@ local function main()
 				return false
 			end
 
+			local function isExecutorLeak(tbl, checkKeys)
+				for k, v in pairs(tbl) do
+					if v == xrefIgnore or (type(v) == "table" and rawget(v, xrefIgnore)) then 
+						return true 
+					end
+
+					if checkKeys and (k == xrefIgnore or (type(k) == "table" and rawget(k, xrefIgnore))) then 
+						return true 
+					end
+				end
+				return false
+			end
+
 			local function spawnScanTask(fn)
 				local t = task.spawn(fn)
 				table.insert(scanTasks, t)
@@ -2222,7 +2235,7 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Values = {node}})
 					for _, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
+						if isDexInternal(tbl) or isExecutorLeak(tbl, false) then continue end
 						for k, v in pairs(tbl) do
 							if v == node then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
@@ -2247,7 +2260,7 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {node}})
 					for _, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
+						if isDexInternal(tbl) or isExecutorLeak(tbl, true) then continue end
 						for k, _ in pairs(tbl) do
 							if k == node then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
@@ -2276,6 +2289,7 @@ local function main()
 						local fnScript = select(1, inferScriptFromFunction(fn))
 						local okUps, ups = pcall(debug.getupvalues, fn)
 						if okUps and type(ups) == "table" then
+							if isExecutorLeak(ups, false) then continue end
 							for ui, uv in pairs(ups) do
 								if uv == node then
 									push(makeStep(
@@ -2692,6 +2706,7 @@ local function main()
 					local tbls = filtergc("table", {Keys = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
+						if isDexInternal(tbl) or isExecutorLeak(tbl, true) then continue end
 						for k, _ in pairs(tbl) do
 							if k == target then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
@@ -2727,6 +2742,7 @@ local function main()
 					local tbls = filtergc("table", {Values = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
+						if isDexInternal(tbl) or isExecutorLeak(tbl, false) then continue end 
 						for k, v in pairs(tbl) do
 							if v == target then
 								local tbScritp = select(1, inferScriptFromTable(tbl))
@@ -2764,6 +2780,7 @@ local function main()
 					for i, fn in ipairs(fns) do
 						local ups = debug.getupvalues(fn)
 						if type(ups) == "table" then
+							if isExecutorLeak(ups, false) then continue end
 							local fnInfo = getFnInfo(fn)
 							local fnScript = select(1, inferScriptFromFunction(fn))
 							for ui, uv in pairs(ups) do
