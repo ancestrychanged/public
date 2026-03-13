@@ -1569,10 +1569,12 @@ local function main()
 			end
 
 			local function inferScriptFromFunction(fn)
-				local fenv = getfenv(fn)
-				local scr = rawget(fenv, "script")
-				if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
-					return scr, "fenv.script"
+				local okFenv, fenv = pcall(getfenv, fn)
+				if okFenv and type(fenv) == "table" then
+					local scr = rawget(fenv, "script")
+					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+						return scr, "fenv.script"
+					end
 				end
 
 				local info = getFnInfo(fn)
@@ -1580,7 +1582,7 @@ local function main()
 				if rawSource and rawSource ~= "=[C]" then
 					local sourcePath = tostring(rawSource):gsub("^@?", "")
 					local found = game:FindFirstChild(sourcePath, true)
-					if found:IsA("LuaSourceContainer") then
+					if found and found:IsA("LuaSourceContainer") then
 						return found, "debug.info"
 					end
 				end
@@ -1601,23 +1603,34 @@ local function main()
 				local mt = getrawmetatable(tbl)
 				for _, key in ipairs(candidates) do
 					local scr = rawget(mt, key)
-					return scr, "metatable." .. key
+					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+						return scr, "metatable." .. key
+					end
 				end
 
 				return nil, nil
 			end
 
 			local function labelForFunction(fn, info, scriptObj)
-				local label = "function " .. ((info and info.Display) or tostring(fn)) .. " @ " .. safePath(scriptObj)
+				local label = "function " .. ((info and info.Display) or tostring(fn))
+				if scriptObj then
+					label = label .. " @ " .. safePath(scriptObj)
+				end
 				return label
 			end
 
 			local function labelForTable(tbl, scriptObj)
-				return "table @ " .. safePath(scriptObj)
+				if scriptObj then
+					return "table @ " .. safePath(scriptObj)
+				end
+				return "table " .. tostring(tbl)
 			end
 
 			local function labelForThread(threadObj, scriptObj)
-				return "thread @ " .. safePath(scriptObj)
+				if scriptObj then
+					return "thread @ " .. safePath(scriptObj)
+				end
+				return "thread " .. tostring(threadObj)
 			end
 
 			local function getHolderId(holder)
@@ -1706,15 +1719,16 @@ local function main()
 						elseif type(v) == "table" then
 							scanValue(v, source, path .. "[" .. kStr .. "]", depth + 1, ownerScript, ownerHint, visited, budget)
 						elseif type(v) == "function" then
-							local ups = debug.getupvalues(v)
-							local fnInfo = getFnInfo(v)
-							local fnScript = select(1, inferScriptFromFunction(v))
-							for ui, uv in pairs(ups) do
-								if uv == target then
-									addResult(
-										source,
-										path .. "[" .. kStr .. "].upval[" .. ui .. "]",
-										target,
+							local okUps, ups = pcall(debug.getupvalues, v)
+							if okUps and type(ups) == "table" then
+								local fnInfo = getFnInfo(v)
+								local fnScript = select(1, inferScriptFromFunction(v))
+								for ui, uv in pairs(ups) do
+									if uv == target then
+										addResult(
+											source,
+											path .. "[" .. kStr .. "].upval[" .. ui .. "]",
+											target,
 										v,
 										{
 											makeStep(
@@ -1728,8 +1742,8 @@ local function main()
 											)
 										},
 										112,
-										nil
-									)
+										nil)
+									end
 								end
 							end
 						end
@@ -2011,8 +2025,8 @@ local function main()
 				pcall(function()
 					local threads = getallthreads()
 					for _, threadObj in ipairs(threads) do
-						local tEnv = getfenv(threadObj)
-						if type(tEnv) == "table" then
+						local okEnv, tEnv = pcall(getfenv, threadObj)
+						if okEnv and type(tEnv) == "table" then
 							local threadScript = getscriptfromthread(threadObj)
 							for k, v in pairs(tEnv) do
 								if v == node then
@@ -2047,29 +2061,32 @@ local function main()
 				pcall(function()
 					local modules = getloadedmodules()
 					for _, mod in ipairs(modules) do
-						for k, v in pairs(getsenv(mod)) do
-							if v == node then
-								push(makeStep(
-									"module-env",
-									mod,
-									"env[" .. tostring(k) .. "]",
-									"module env @ " .. safePath(mod),
-									116,
-									mod,
-									nil
-								))
-								break
-							elseif k == node then
-								push(makeStep(
-									"module-env",
-									mod,
-									"env.<key>",
-									"module env @ " .. safePath(mod),
-									112,
-									mod,
-									nil
-								))
-								break
+						local okEnv, senv = pcall(getsenv, mod)
+						if okEnv and type(senv) == "table" then
+							for k, v in pairs(senv) do
+								if v == node then
+									push(makeStep(
+										"module-env",
+										mod,
+										"env[" .. tostring(k) .. "]",
+										"module env @ " .. safePath(mod),
+										116,
+										mod,
+										nil
+									))
+									break
+								elseif k == node then
+									push(makeStep(
+										"module-env",
+										mod,
+										"env.<key>",
+										"module env @ " .. safePath(mod),
+										112,
+										mod,
+										nil
+									))
+									break
+								end
 							end
 						end
 						if #found >= cLimit then break end
@@ -2428,19 +2445,21 @@ local function main()
 						if threadObj and not scannedThreads[threadObj] then
 							scannedThreads[threadObj] = true
 
-							local tEnv = getfenv(threadObj)
-							local visited = {}
-							local budget = {count = 0}
-							scanValue(
-								tEnv,
-								"thread",
-								"thread[" .. ti .. "].env",
-								0,
-								threadScript,
-								threadScript and safePath(threadScript) or ("thread[" .. ti .. "]"),
-								visited,
-								budget
-							)
+							local okEnv, tEnv = pcall(getfenv, threadObj)
+							if okEnv and type(tEnv) == "table" then
+								local visited = {}
+								local budget = {count = 0}
+								scanValue(
+									tEnv,
+									"thread",
+									"thread[" .. ti .. "].env",
+									0,
+									threadScript,
+									threadScript and safePath(threadScript) or ("thread[" .. ti .. "]"),
+									visited,
+									budget
+								)
+							end
 
 							scanThreadStack(threadObj, ti, threadScript)
 						end
@@ -2472,8 +2491,8 @@ local function main()
 				pcall(function()
 					local modules = getloadedmodules()
 					for _, mod in ipairs(modules) do
-						local senv = getsenv(mod)
-						if type(senv) == "table" then
+						local okEnv, senv = pcall(getsenv, mod)
+						if okEnv and type(senv) == "table" then
 							local visited = {}
 							local budget = {count = 0}
 							scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
@@ -2487,14 +2506,15 @@ local function main()
 				for _, cbName in ipairs(cbNames) do
 					pcall(function()
 						local cb = getcallbackvalue(target, cbName)
-						local cbInfo = getFnInfo(cb)
-						local cbScript = select(1, inferScriptFromFunction(cb))
-						addResult(
-							"callback",
-							cbName,
-							cb,
-							cb,
-							{
+						if type(cb) == "function" then
+							local cbInfo = getFnInfo(cb)
+							local cbScript = select(1, inferScriptFromFunction(cb))
+							addResult(
+								"callback",
+								cbName,
+								cb,
+								cb,
+								{
 								makeStep(
 									"callback-slot",
 									cb,
@@ -2506,8 +2526,8 @@ local function main()
 								)
 							},
 							126,
-							nil
-						)
+							nil)
+						end
 					end)
 				end
 
