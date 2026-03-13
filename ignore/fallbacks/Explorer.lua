@@ -2194,20 +2194,21 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Values = {node}})
 					for _, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
-						for k, v in pairs(tbl) do
-							if v == node then
-								local tbScritp = select(1, inferScriptFromTable(tbl))
-								push(makeStep(
-									tbScritp and "table-script" or "table-value",
-									tbl,
-									"[" .. tostring(k) .. "]",
-									labelForTable(tbl, tbScritp),
-									tbScritp and 88 or 54,
-									tbScritp,
-									nil
-								))
-								break
+						if not isDexInternal(tbl) then
+							for k, v in pairs(tbl) do
+								if v == node then
+									local tbScritp = select(1, inferScriptFromTable(tbl))
+									push(makeStep(
+										tbScritp and "table-script" or "table-value",
+										tbl,
+										"[" .. tostring(k) .. "]",
+										labelForTable(tbl, tbScritp),
+										tbScritp and 88 or 54,
+										tbScritp,
+										nil
+									))
+									break
+								end
 							end
 						end
 
@@ -2219,20 +2220,21 @@ local function main()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {node}})
 					for _, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
-						for k, _ in pairs(tbl) do
-							if k == node then
-								local tbScritp = select(1, inferScriptFromTable(tbl))
-								push(makeStep(
-									tbScritp and "table-script" or "table-key",
-									tbl,
-									".<key>",
-									labelForTable(tbl, tbScritp),
-									tbScritp and 84 or 48,
-									tbScritp,
-									nil
-								))
-								break
+						if not isDexInternal(tbl) then
+							for k, _ in pairs(tbl) do
+								if k == node then
+									local tbScritp = select(1, inferScriptFromTable(tbl))
+									push(makeStep(
+										tbScritp and "table-script" or "table-key",
+										tbl,
+										".<key>",
+										labelForTable(tbl, tbScritp),
+										tbScritp and 84 or 48,
+										tbScritp,
+										nil
+									))
+									break
+								end
 							end
 						end
 
@@ -2583,30 +2585,31 @@ local function main()
 					local tbls = filtergc("table", {Keys = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
-						for k, _ in pairs(tbl) do
-							if k == target then
-								local tbScritp = select(1, inferScriptFromTable(tbl))
-								addResult(
-									"filtergc",
-									"table[" .. i .. "].<key>",
-									target,
-									tbl,
-									{
-										makeStep(
-											tbScritp and "table-script" or "table-key",
-											tbl,
-											".<key>",
-											labelForTable(tbl, tbScritp),
-											tbScritp and 84 or 48,
-											tbScritp,
-											nil
-										)
-									},
-									tbScritp and 84 or 48,
-									tbScritp and nil or "anonymous table"
-								)
-								break
+						if not isDexInternal(tbl) then
+							for k, _ in pairs(tbl) do
+								if k == target then
+									local tbScritp = select(1, inferScriptFromTable(tbl))
+									addResult(
+										"filtergc",
+										"table[" .. i .. "].<key>",
+										target,
+										tbl,
+										{
+											makeStep(
+												tbScritp and "table-script" or "table-key",
+												tbl,
+												".<key>",
+												labelForTable(tbl, tbScritp),
+												tbScritp and 84 or 48,
+												tbScritp,
+												nil
+											)
+										},
+										tbScritp and 84 or 48,
+										tbScritp and nil or "anonymous table"
+									)
+									break
+								end
 							end
 						end
 						topYield(i, total)
@@ -2619,30 +2622,31 @@ local function main()
 					local tbls = filtergc("table", {Values = {target}})
 					local total = #tbls
 					for i, tbl in ipairs(tbls) do
-						if isDexInternal(tbl) then continue end
-						for k, v in pairs(tbl) do
-							if v == target then
-								local tbScritp = select(1, inferScriptFromTable(tbl))
-								addResult(
-									"filtergc",
-									"table[" .. i .. "][" .. tostring(k) .. "]",
-									target,
-									tbl,
-									{
-										makeStep(
-											tbScritp and "table-script" or "table-value",
-											tbl,
-											"[" .. tostring(k) .. "]",
-											labelForTable(tbl, tbScritp),
-											tbScritp and 88 or 54,
-											tbScritp,
-											nil
-										)
-									},
-									tbScritp and 88 or 54,
-									tbScritp and nil or "anonymous table"
-								)
-								break
+						if not isDexInternal(tbl) then
+							for k, v in pairs(tbl) do
+								if v == target then
+									local tbScritp = select(1, inferScriptFromTable(tbl))
+									addResult(
+										"filtergc",
+										"table[" .. i .. "][" .. tostring(k) .. "]",
+										target,
+										tbl,
+										{
+											makeStep(
+												tbScritp and "table-script" or "table-value",
+												tbl,
+												"[" .. tostring(k) .. "]",
+												labelForTable(tbl, tbScritp),
+												tbScritp and 88 or 54,
+												tbScritp,
+												nil
+											)
+										},
+										tbScritp and 88 or 54,
+										tbScritp and nil or "anonymous table"
+									)
+									break
+								end
 							end
 						end
 						topYield(i, total)
@@ -2825,12 +2829,13 @@ local function main()
 					local modules = getloadedmodules()
 					local total = #modules
 					for mi, mod in ipairs(modules) do
-						if hideCoreScripts and isCoreScriptPath(mod) then continue end
-						local okEnv, senv = pcall(getsenv, mod)
-						if okEnv and type(senv) == "table" then
-							local visited = {}
-							local budget = {count = 0}
-							scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
+						if not (hideCoreScripts and isCoreScriptPath(mod)) then
+							local okEnv, senv = pcall(getsenv, mod)
+							if okEnv and type(senv) == "table" then
+								local visited = {}
+								local budget = {count = 0}
+								scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
+							end
 						end
 						topYield(mi, total)
 					end
