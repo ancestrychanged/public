@@ -2011,32 +2011,12 @@ local function main()
 					end
 				end
 
-				if signalsAPI and signalsAPI.Events and typeof(obj) == "Instance" then
-					for className, signals in pairs(signalsAPI.Events) do
-						local isA = false
-						pcall(function() isA = obj:IsA(className) end)
-						if isA then
-							for _, sigName in ipairs(signals) do
-								add(sigName)
-							end
-						end
-					end
-				else
-					-- Fallback: hardcoded common signals if API data unavailable
-					add("Changed")
-					add("ChildAdded")
-					add("ChildRemoved")
-					add("AncestryChanged")
-					add("Destroying")
-					add("DescendantAdded")
-					add("DescendantRemoving")
-
-					if typeof(obj) == "Instance" then
-						if obj:IsA("RemoteEvent") then
-							add("OnClientEvent")
-						end
-						if obj:IsA("BindableEvent") then
-							add("Event")
+				for className, signals in pairs(signalsAPI.Events) do
+					local isA = false
+					pcall(function() isA = obj:IsA(className) end)
+					if isA then
+						for _, sigName in ipairs(signals) do
+							add(sigName)
 						end
 					end
 				end
@@ -2562,41 +2542,62 @@ local function main()
 					local total = #signalCandidates
 					for si, sigData in ipairs(signalCandidates) do
 						pcall(function()
-							local conns = getconnections(sigData.Signal)
-							for ci, conn in ipairs(conns) do
-								local fn
-								pcall(function() fn = conn.Function end)
-								if type(fn) ~= "function" then
-									pcall(function() fn = conn.Callback end)
-								end
-
-								if type(fn) == "function" then
-									local fnInfo = getFnInfo(fn)
-									local fnScript = select(1, inferScriptFromFunction(fn))
-									local connScore = (sigData.Name == "OnClientEvent") and 155 or 138
-
-									addResult(
-										"connection",
-										"signal." .. sigData.Name .. "[" .. ci .. "]",
-										fn,
-										fn,
-										{
-											makeStep(
-												"signal-connection",
-												fn,
-												"signal." .. sigData.Name .. " connection[" .. ci .. "]",
-												labelForFunction(fn, fnInfo, fnScript),
-												connScore,
-												fnScript,
-												fnInfo
-											)
-										},
-										connScore,
-										nil
-									)
-								end
+						local conns = getconnections(sigData.Signal)
+						for ci, conn in ipairs(conns) do
+							local fn
+							pcall(function() fn = conn.Function end)
+							if type(fn) ~= "function" then
+								pcall(function() fn = conn.Callback end)
 							end
-						end)
+
+							local fnInfo, fnScript, label, connScore
+							local isForeign = false
+							pcall(function() isForeign = conn.ForeignState end)
+
+							if type(fn) == "function" then
+								fnInfo = getFnInfo(fn)
+								fnScript = select(1, inferScriptFromFunction(fn))
+								label = labelForFunction(fn, fnInfo, fnScript)
+								connScore = (sigData.Name == "OnClientEvent") and 155 or 138
+							else
+								local enabled = true
+								pcall(function() enabled = conn.Enabled end)
+								local isLua = false
+								pcall(function() isLua = conn.LuaConnection end)
+
+								label = "connection [" .. sigData.Name .. "]"
+								if isForeign then
+									label = label .. " (foreign state)"
+								elseif not isLua then
+									label = label .. " (C-side)"
+								end
+								if not enabled then
+									label = label .. " (disabled)"
+								end
+								connScore = isForeign and 90 or 100
+							end
+
+							addResult(
+								"connection",
+								"signal." .. sigData.Name .. "[" .. ci .. "]",
+								fn or conn,
+								fn or conn,
+								{
+									makeStep(
+										"signal-connection",
+										fn or conn,
+										"signal." .. sigData.Name .. " connection[" .. ci .. "]",
+										label,
+										connScore,
+										fnScript,
+										fnInfo
+									)
+								},
+								connScore,
+								nil
+							)
+						end
+					end)
 						topYield(si, total)
 					end
 				advancePhase()
