@@ -1531,8 +1531,8 @@ local function main()
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
 				BorderSizePixel = 0,
-				Position = UDim2.new(1, -142, 0, 2),
-				Size = UDim2.new(0, 80, 0, 16),
+				Position = UDim2.new(1, -132, 0, 2),
+				Size = UDim2.new(0, 70, 0, 16),
 				Font = Enum.Font.SourceSans,
 				Text = "Core: OFF",
 				TextColor3 = Color3.fromRGB(200, 200, 200),
@@ -1541,6 +1541,25 @@ local function main()
 			})
 			Instance.new("UICorner", coreToggleBtn).CornerRadius = UDim.new(0.02, 0)
 			Lib.ButtonAnim(coreToggleBtn, {Mode = 2})
+
+			local buildChains = false
+			local chainToggleBtn = createSimple("TextButton", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+				BorderSizePixel = 0,
+				Position = UDim2.new(1, -206, 0, 2),
+				Size = UDim2.new(0, 70, 0, 16),
+				Font = Enum.Font.SourceSans,
+				Text = "Chain: OFF",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 12,
+				AutoButtonColor = false
+			})
+			Instance.new("UICorner", chainToggleBtn).CornerRadius = UDim.new(0.02, 0)
+			Lib.ButtonAnim(chainToggleBtn, {Mode = 2})
+
+			dumpBtn.Position = UDim2.new(1, -284, 0, 2)
+			stopBtn.Position = UDim2.new(1, -362, 0, 2)
 
 			local cfgFrame = createSimple("Frame", {
 				Parent = content,
@@ -1924,8 +1943,13 @@ local function main()
 						end
 					end
 				end
+				
 				if not isCoreResult and typeof(holder) == "Instance" then
 					isCoreResult = isCorescript(holder)
+				end
+
+				if isCoreResult and not showCoreScripts then
+					return
 				end
 
 				resultSeen[key] = true
@@ -2470,6 +2494,10 @@ local function main()
 				table.clear(rankedChains)
 				weakTableCandidate = nil
 
+				if not buildChains then
+					return "[Chain building is off, toggle it with the button above]"
+				end
+
 				if resultCount == 0 then
 					return "Chain\n  (no live retainers found)"
 				end
@@ -2610,6 +2638,32 @@ local function main()
 					and Color3.fromRGB(50, 100, 60)
 					or Color3.fromRGB(60, 60, 60)
 				rebuildRenderedList()
+			end)
+
+			local isRebuildingChain = false
+			chainToggleBtn.MouseButton1Click:Connect(function()
+				buildChains = not buildChains
+				chainToggleBtn.Text = buildChains and "Chain: ON" or "Chain: OFF"
+				chainToggleBtn.BackgroundColor3 = buildChains
+					and Color3.fromRGB(50, 100, 60)
+					or Color3.fromRGB(60, 60, 60)
+				
+				if not scanning and not isRebuildingChain then
+					isRebuildingChain = true
+					cfgLabel.Text = "Rebuilding chain..."
+					task.spawn(function()
+						local okSummary, summaryText = pcall(rebuildSummaryText)
+						cfgLabel.Text = okSummary and summaryText or "Retention chain\n  (failed to build chain summary)"
+						if dumpBtn then
+							dumpBtn.Text = weakTableCandidate and "Dump table" or "No table"
+						end
+						isRebuildingChain = false
+					end)
+				elseif not scanning and isRebuildingChain then
+					cfgLabel.Text = "Please wait, rebuilding chain..."
+				elseif scanning then
+					cfgLabel.Text = buildChains and "Chain\n  (building...)" or "[Chain building is off, toggle it with the button above]"
+				end
 			end)
 
 			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
