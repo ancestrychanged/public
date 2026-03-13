@@ -1366,6 +1366,9 @@ local function main()
 			local _getconnections = getconnections or get_signal_cons
 			local _getcallbackvalue = getcallbackvalue or getcallbackmember
 			local _getreg = getreg or getregistry or (env and (env.getreg or env.getregistry))
+			local _getrunningscripts = getrunningscripts
+			local _getscriptthread = getscriptthread
+			local _getscriptfromthread_fast = getscriptfromthread
 			local _getstack = dbg.getstack or getstack
 			local _getcallstack = dbg.getcallstack or getcallstack
 
@@ -2544,18 +2547,55 @@ local function main()
 				task.wait()
 
 				pcall(function()
-					local threads = _getallthreads()
-					for ti, threadObj in ipairs(threads) do
-						local threadScript = _getscriptfromthread(threadObj)
+					local scannedThreads = {}
 
-						local okEnv, tEnv = pcall(getfenv, threadObj)
-						if okEnv and type(tEnv) == "table" then
-							local visited = {}
-							local budget = {count = 0}
-							scanValue(tEnv, "thread", "thread[" .. ti .. "].env", 0, threadScript, threadScript and safePath(threadScript) or ("thread[" .. ti .. "]"), visited, budget)
+					local function scanOneThread(threadObj, ti, threadScript)
+						if threadObj and not scannedThreads[threadObj] then
+							scannedThreads[threadObj] = true
+
+							local okEnv, tEnv = pcall(getfenv, threadObj)
+							if okEnv and type(tEnv) == "table" then
+								local visited = {}
+								local budget = {count = 0}
+								scanValue(
+									tEnv,
+									"thread",
+									"thread[" .. ti .. "].env",
+									0,
+									threadScript,
+									threadScript and safePath(threadScript) or ("thread[" .. ti .. "]"),
+									visited,
+									budget
+								)
+							end
+
+							scanThreadStack(threadObj, ti, threadScript)
 						end
+					end
 
-						scanThreadStack(threadObj, ti, threadScript)
+					local ti = 0
+
+					if _getrunningscripts and _getscriptthread then
+						local okScripts, runningScripts = pcall(_getrunningscripts)
+						if okScripts and type(runningScripts) == "table" then
+							for _, scr in ipairs(runningScripts) do
+								local okThread, threadObj = pcall(_getscriptthread, scr)
+								if okThread and threadObj then
+									ti = ti + 1
+									scanOneThread(threadObj, ti, scr)
+								end
+								topYield()
+							end
+						end
+					end
+
+					local threads = _getallthreads()
+					for _, threadObj in ipairs(threads) do
+						if not scannedThreads[threadObj] then
+							ti = ti + 1
+							local threadScript = (_getscriptfromthread_fast and _getscriptfromthread_fast(threadObj)) or _getscriptfromthread(threadObj)
+							scanOneThread(threadObj, ti, threadScript)
+						end
 						topYield()
 					end
 				end)
