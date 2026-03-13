@@ -1361,10 +1361,6 @@ local function main()
 
 			local getallthreads = getallthreads or function()
 				local threads, seen = {}, {}
-				if not getreg then
-					return threads
-				end
-
 				local ok, reg = pcall(getreg)
 				if not ok or type(reg) ~= "table" then
 					return threads
@@ -2562,9 +2558,7 @@ local function main()
 			spawnScanTask(function()
 				
 				while phasesCompleted < 3 do task.wait() end
-
-				if getconnections then
-					local signalCandidates = getSignalCandidates(target)
+				local signalCandidates = getSignalCandidates(target)
 					local total = #signalCandidates
 					for si, sigData in ipairs(signalCandidates) do
 						pcall(function()
@@ -2605,7 +2599,6 @@ local function main()
 						end)
 						topYield(si, total)
 					end
-				end
 				advancePhase()
 			end)
 
