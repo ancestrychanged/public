@@ -1449,6 +1449,23 @@ local function main()
 				TextXAlignment = Enum.TextXAlignment.Left
 			})
 
+			local progressBarBg = createSimple("Frame", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 1, -3),
+				Size = UDim2.new(1, 0, 0, 3),
+				ClipsDescendants = true
+			})
+
+			local progressBarFill = createSimple("Frame", {
+				Parent = progressBarBg,
+				BackgroundColor3 = Color3.fromRGB(60, 160, 255),
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 0, 0, 0),
+				Size = UDim2.new(0, 0, 1, 0)
+			})
+
 			local copyBtn = createSimple("TextButton", {
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
@@ -1530,14 +1547,36 @@ local function main()
 			local rankedChains = {}
 			local weakTableCandidate = nil
 			local chainCache = {}
-			local topIter = 0
 			local renderCon
+			local scanProgress = 0
+			local phasesCompleted = 0
+			local totalPhases = 7
+			local phaseWeights = {0.15, 0.15, 0.15, 0.05, 0.25, 0.20, 0.05}
+			local phaseBase = 0
 
-			local function topYield()
-				topIter += 1
-				if topIter % 50 == 0 then
-					task.wait()
+			local lastYieldClock = os.clock()
+			local YIELD_BUDGET = 0.030 
+
+			local function topYield(iterInPhase, totalInPhase)
+				
+				if totalInPhase and totalInPhase > 0 and iterInPhase then
+					local phaseWeight = phaseWeights[phasesCompleted + 1] or 0
+					scanProgress = phaseBase + phaseWeight * (iterInPhase / totalInPhase)
 				end
+
+				if os.clock() - lastYieldClock >= YIELD_BUDGET then
+					task.wait()
+					lastYieldClock = os.clock()
+				end
+			end
+
+			local function advancePhase()
+				phasesCompleted = phasesCompleted + 1
+				phaseBase = 0
+				for i = 1, phasesCompleted do
+					phaseBase = phaseBase + (phaseWeights[i] or 0)
+				end
+				scanProgress = phaseBase
 			end
 
 			local function safePath(inst)
@@ -2289,125 +2328,164 @@ local function main()
 
 				if batch > 0 then
 					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, rendered * 20)
-					statusLabel.Text = "  " .. rendered .. " xref(s)" .. (scanning and " (scanning...)" or "")
+				end
+
+				
+				if scanning then
+					local pct = math.clamp(scanProgress, 0, 1)
+					progressBarFill.Size = UDim2.new(pct, 0, 1, 0)
+					progressBarFill.BackgroundColor3 = Color3.fromRGB(
+						math.floor(60 + 100 * pct),
+						math.floor(160 - 40 * pct),
+						math.floor(255 - 155 * pct)
+					)
+					statusLabel.Text = ("  %d xref(s) — scanning... %.2f%%"):format(rendered, pct * 100)
 				end
 
 				if not scanning and rendered >= resultCount then
 					statusLabel.Text = "  " .. resultCount .. " xref(s)"
+					progressBarFill.Size = UDim2.new(1, 0, 1, 0)
+					progressBarBg.Visible = false
 					window:SetTitle("Xrefs: " .. tostring(target))
 					renderCon:Disconnect()
 				end
 			end)
 
+			local function finalizeScan()
+				local okSummary, summaryText = pcall(rebuildSummaryText)
+				cfgLabel.Text = okSummary and summaryText or "Retention chain\n  (failed to build chain summary)"
+
+				if dumpBtn then
+					if weakTableCandidate then
+						dumpBtn.Text = "Dump table"
+					else
+						dumpBtn.Text = "No table"
+					end
+				end
+
+				scanning = false
+			end
+
+			
 			task.spawn(function()
-				do
-					pcall(function()
-						local tbls = filtergc("table", {Keys = {target}})
-						for i, tbl in ipairs(tbls) do
-							for k, _ in pairs(tbl) do
-								if k == target then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									addResult(
-										"filtergc",
-										"table[" .. i .. "].<key>",
-										target,
-										tbl,
-										{
-											makeStep(
-												tbScritp and "table-script" or "table-key",
-												tbl,
-												".<key>",
-												labelForTable(tbl, tbScritp),
-												tbScritp and 84 or 48,
-												tbScritp,
-												nil
-											)
-										},
-										tbScritp and 84 or 48,
-										tbScritp and nil or "anonymous table"
-									)
-									break
-								end
-							end
-							topYield()
-						end
-					end)
-					task.wait()
-
-					pcall(function()
-						local tbls = filtergc("table", {Values = {target}})
-						for i, tbl in ipairs(tbls) do
-							for k, v in pairs(tbl) do
-								if v == target then
-									local tbScritp = select(1, inferScriptFromTable(tbl))
-									addResult(
-										"filtergc",
-										"table[" .. i .. "][" .. tostring(k) .. "]",
-										target,
-										tbl,
-										{
-											makeStep(
-												tbScritp and "table-script" or "table-value",
-												tbl,
-												"[" .. tostring(k) .. "]",
-												labelForTable(tbl, tbScritp),
-												tbScritp and 88 or 54,
-												tbScritp,
-												nil
-											)
-										},
-										tbScritp and 88 or 54,
-										tbScritp and nil or "anonymous table"
-									)
-									break
-								end
-							end
-							topYield()
-						end
-					end)
-					task.wait()
-
-					pcall(function()
-						local fns = filtergc("function", {Upvalues = {target}})
-						for i, fn in ipairs(fns) do
-							local ups = debug.getupvalues(fn)
-							if type(ups) == "table" then
-								local fnInfo = getFnInfo(fn)
-								local fnScript = select(1, inferScriptFromFunction(fn))
-								for ui, uv in pairs(ups) do
-									if uv == target then
-										addResult(
-											"filtergc",
-											"function[" .. i .. "].upval[" .. ui .. "]",
-											target,
-											fn,
-											{
-												makeStep(
-													"function-upvalue",
-													fn,
-													"upval[" .. ui .. "]",
-													labelForFunction(fn, fnInfo, fnScript),
-													112,
-													fnScript,
-													fnInfo
-												)
-											},
-											112,
+				pcall(function()
+					local tbls = filtergc("table", {Keys = {target}})
+					local total = #tbls
+					for i, tbl in ipairs(tbls) do
+						for k, _ in pairs(tbl) do
+							if k == target then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								addResult(
+									"filtergc",
+									"table[" .. i .. "].<key>",
+									target,
+									tbl,
+									{
+										makeStep(
+											tbScritp and "table-script" or "table-key",
+											tbl,
+											".<key>",
+											labelForTable(tbl, tbScritp),
+											tbScritp and 84 or 48,
+											tbScritp,
 											nil
 										)
-										break
-									end
+									},
+									tbScritp and 84 or 48,
+									tbScritp and nil or "anonymous table"
+								)
+								break
+							end
+						end
+						topYield(i, total)
+					end
+				end)
+				advancePhase()
+
+				
+				pcall(function()
+					local tbls = filtergc("table", {Values = {target}})
+					local total = #tbls
+					for i, tbl in ipairs(tbls) do
+						for k, v in pairs(tbl) do
+							if v == target then
+								local tbScritp = select(1, inferScriptFromTable(tbl))
+								addResult(
+									"filtergc",
+									"table[" .. i .. "][" .. tostring(k) .. "]",
+									target,
+									tbl,
+									{
+										makeStep(
+											tbScritp and "table-script" or "table-value",
+											tbl,
+											"[" .. tostring(k) .. "]",
+											labelForTable(tbl, tbScritp),
+											tbScritp and 88 or 54,
+											tbScritp,
+											nil
+										)
+									},
+									tbScritp and 88 or 54,
+									tbScritp and nil or "anonymous table"
+								)
+								break
+							end
+						end
+						topYield(i, total)
+					end
+				end)
+				advancePhase()
+
+				
+				pcall(function()
+					local fns = filtergc("function", {Upvalues = {target}})
+					local total = #fns
+					for i, fn in ipairs(fns) do
+						local ups = debug.getupvalues(fn)
+						if type(ups) == "table" then
+							local fnInfo = getFnInfo(fn)
+							local fnScript = select(1, inferScriptFromFunction(fn))
+							for ui, uv in pairs(ups) do
+								if uv == target then
+									addResult(
+										"filtergc",
+										"function[" .. i .. "].upval[" .. ui .. "]",
+										target,
+										fn,
+										{
+											makeStep(
+												"function-upvalue",
+												fn,
+												"upval[" .. ui .. "]",
+												labelForFunction(fn, fnInfo, fnScript),
+												112,
+												fnScript,
+												fnInfo
+											)
+										},
+										112,
+										nil
+									)
+									break
 								end
 							end
-							topYield()
 						end
-					end)
-					task.wait()
-				end
+						topYield(i, total)
+					end
+				end)
+				advancePhase()
+			end)
+
+			
+			task.spawn(function()
+				
+				while phasesCompleted < 3 do task.wait() end
 
 				if getconnections then
 					local signalCandidates = getSignalCandidates(target)
-					for _, sigData in ipairs(signalCandidates) do
+					local total = #signalCandidates
+					for si, sigData in ipairs(signalCandidates) do
 						pcall(function()
 							local conns = getconnections(sigData.Signal)
 							for ci, conn in ipairs(conns) do
@@ -2444,9 +2522,15 @@ local function main()
 								end
 							end
 						end)
+						topYield(si, total)
 					end
 				end
-				task.wait()
+				advancePhase()
+			end)
+
+			
+			task.spawn(function()
+				while phasesCompleted < 4 do task.wait() end
 
 				pcall(function()
 					local scannedThreads = {}
@@ -2478,42 +2562,55 @@ local function main()
 					local ti = 0
 
 					local runningScripts = getrunningscripts()
-					for _, scr in ipairs(runningScripts) do
+					local totalScripts = #runningScripts
+					for si, scr in ipairs(runningScripts) do
 						local threadObj = getscriptthread(scr)
 						if threadObj then
-							ti +=1
+							ti += 1
 							scanOneThread(threadObj, ti, scr)
 						end
-						topYield()
+						topYield(si, totalScripts)
 					end
 
 					local threads = getallthreads()
-					for _, threadObj in ipairs(threads) do
+					local totalThreads = #threads
+					for ti2, threadObj in ipairs(threads) do
 						if not scannedThreads[threadObj] then
 							ti += 1
 							scanOneThread(threadObj, ti, getscriptfromthread(threadObj))
 						end
-						topYield()
+						topYield(ti2, totalThreads)
 					end
 				end)
-				task.wait()
+				advancePhase()
+			end)
+
+			
+			task.spawn(function()
+				while phasesCompleted < 5 do task.wait() end
 
 				pcall(function()
 					local modules = getloadedmodules()
-					for _, mod in ipairs(modules) do
+					local total = #modules
+					for mi, mod in ipairs(modules) do
 						local okEnv, senv = pcall(getsenv, mod)
 						if okEnv and type(senv) == "table" then
 							local visited = {}
 							local budget = {count = 0}
 							scanValue(senv, "module", safePath(mod) .. ".env", 0, mod, safePath(mod), visited, budget)
 						end
-						topYield()
+						topYield(mi, total)
 					end
 				end)
-				task.wait()
+				advancePhase()
+			end)
+
+			
+			task.spawn(function()
+				while phasesCompleted < 6 do task.wait() end
 
 				local cbNames = {"OnInvoke", "OnServerInvoke", "OnClientInvoke"}
-				for _, cbName in ipairs(cbNames) do
+				for ci, cbName in ipairs(cbNames) do
 					pcall(function()
 						local cb = getcallbackvalue(target, cbName)
 						if type(cb) == "function" then
@@ -2539,20 +2636,11 @@ local function main()
 							nil)
 						end
 					end)
+					topYield(ci, #cbNames)
 				end
+				advancePhase()
 
-				local okSummary, summaryText = pcall(rebuildSummaryText)
-				cfgLabel.Text = okSummary and summaryText or "Retention chain\n  (failed to build chain summary)"
-
-				if dumpBtn then
-					if weakTableCandidate then
-						dumpBtn.Text = "Dump table"
-					else
-						dumpBtn.Text = "No table"
-					end
-				end
-
-				scanning = false
+				finalizeScan()
 			end)
 
 			copyBtn.MouseButton1Click:Connect(function()
