@@ -2518,7 +2518,7 @@ local function main()
 					end
 				end
 
-				local lines = {"Chain"}
+				local lines = {"Call chain\nIf a XREF isn't present, it means the function which points at an Instance is not running\nFor this, you'll have to manually decompile all scripts"}
 				local maxChains = math.min(3, #rankedChains)
 
 				for i = 1, maxChains do
@@ -2664,7 +2664,6 @@ local function main()
 					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, #renderedEntries * 20)
 				end
 
-				
 				if scanning then
 					local pct = math.clamp(scanProgress, 0, 1)
 					progressBarFill.Size = UDim2.new(pct, 0, 1, 0)
@@ -2700,7 +2699,6 @@ local function main()
 				scanning = false
 			end
 
-			
 			spawnScanTask(function()
 				pcall(function()
 					local tbls = filtergc("table", {Keys = {target}})
@@ -2735,8 +2733,8 @@ local function main()
 						topYield(i, total)
 					end
 				end)
-				advancePhase()
 
+				advancePhase()
 				
 				pcall(function()
 					local tbls = filtergc("table", {Values = {target}})
@@ -2771,9 +2769,9 @@ local function main()
 						topYield(i, total)
 					end
 				end)
+
 				advancePhase()
 
-				
 				pcall(function()
 					local fns = filtergc("function", {Upvalues = {target}})
 					local total = #fns
@@ -2814,9 +2812,7 @@ local function main()
 				advancePhase()
 			end)
 
-			
 			spawnScanTask(function()
-				
 				while phasesCompleted < 3 do task.wait() end
 				local signalCandidates = getSignalCandidates(target)
 					local total = #signalCandidates
