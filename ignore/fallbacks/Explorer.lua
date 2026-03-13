@@ -1704,12 +1704,95 @@ local function main()
 					return label
 				end
 
-				local function labelForTable(tbl, scriptObj)
-					if scriptObj then
-						return "table @ " .. safePath(scriptObj)
+			local previewTable
+
+			local function previewValue(v, maxLen, depth)
+				maxLen = maxLen or 32
+				depth = depth or 1
+				local t = typeof(v)
+				if t == "string" then
+					local s = v
+					if #s > maxLen then s = s:sub(1, maxLen) .. "..." end
+					return '"' .. s:gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "") .. '"'
+				elseif t == "number" or t == "boolean" then
+					return tostring(v)
+				elseif t == "nil" then
+					return "nil"
+				elseif t == "Instance" then
+					local ok, cn = pcall(function() return v.ClassName end)
+					local ok2, nm = pcall(function() return v.Name end)
+					if ok and ok2 then
+						return "<" .. cn .. "> " .. nm
 					end
-					return "table " .. tostring(tbl)
+					return "<Instance>"
+				elseif t == "function" then
+					return "<function>"
+				elseif t == "table" then
+					if depth >= 16 then
+						return "{...}"
+					end
+					return previewTable(v, 4, 128, depth + 1)
+				elseif t == "thread" then
+					return "<thread>"
+				elseif t == "userdata" then
+					return tostring(v)
 				end
+				local ok, s = pcall(tostring, v)
+				if ok then return s end
+				return "<" .. t .. ">"
+			end
+
+			function previewTable(tbl, maxEntries, maxTotalLen, depth)
+				maxEntries = maxEntries or 4
+				maxTotalLen = maxTotalLen or 256
+				depth = depth or 1
+				local parts = {}
+				local count = 0
+				local total = 0
+				local ok = pcall(function()
+					for _ in pairs(tbl) do total = total + 1 end
+				end)
+				if not ok then return "{<error>}" end
+
+				ok = pcall(function()
+					for k, v in pairs(tbl) do
+						if count >= maxEntries then break end
+						count = count + 1
+						local kStr
+						if type(k) == "number" then
+							kStr = "[" .. k .. "]"
+						elseif type(k) == "string" and k:match("^[_%a][_%w]*$") then
+							kStr = k
+						else
+							kStr = "[" .. previewValue(k, 16, depth) .. "]"
+						end
+						parts[#parts + 1] = kStr .. " = " .. previewValue(v, 32, depth)
+					end
+				end)
+
+				if not ok or #parts == 0 then
+					if total == 0 then return "{}" end
+					return "{" .. total .. " entries}"
+				end
+
+				local suffix = (total > count) and ", ..." or ""
+				local inner = table.concat(parts, ", ") .. suffix
+				if #inner > maxTotalLen then
+					inner = inner:sub(1, maxTotalLen) .. "..."
+				end
+				return "{" .. inner .. "}"
+			end
+
+			local function labelForTable(tbl, scriptObj)
+				if scriptObj then
+					return "table @ " .. safePath(scriptObj)
+				end
+				local ok, preview = pcall(previewTable, tbl)
+				if ok and preview then
+					return "table " .. preview
+				end
+				return "table " .. tostring(tbl)
+			end
 
 				local function labelForThread(threadObj, scriptObj)
 					if scriptObj then
@@ -2715,8 +2798,8 @@ local function main()
 					end)
 					topYield(ci, #cbNames)
 				end
+				
 				advancePhase()
-
 				finalizeScan()
 			end)
 
