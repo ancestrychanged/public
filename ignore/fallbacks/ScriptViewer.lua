@@ -278,7 +278,7 @@ local function main()
 
 			source = "-- Script Path: "..getPath(scr).."\n"
 			source = source .. "-- Took "..tostring(math.floor( (tick() - oldtick) * 100) / 100).."s to decompile.\n"
-			source = source .. "-- Decompiler: Oracle"
+			source = source .. "-- Decompiler: Oracle\n"
 			source = source .. "-- Executor: "..executorName.." ("..executorVersion..")\n\n"
 
 			source = source .. decompiled
