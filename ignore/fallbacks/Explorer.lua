@@ -1500,7 +1500,7 @@ local function main()
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(160, 60, 60),
 				BorderSizePixel = 0,
-				Position = UDim2.new(1, -212, 0, 2),
+				Position = UDim2.new(1, -296, 0, 2),
 				Size = UDim2.new(0, 74, 0, 16),
 				Font = Enum.Font.SourceSans,
 				Text = "Stop scan",
@@ -1515,7 +1515,7 @@ local function main()
 				Parent = statusLabel,
 				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
 				BorderSizePixel = 0,
-				Position = UDim2.new(1, -135, 0, 2),
+				Position = UDim2.new(1, -219, 0, 2),
 				Size = UDim2.new(0, 74, 0, 16),
 				Font = Enum.Font.SourceSans,
 				Text = "Dump table",
@@ -1525,6 +1525,22 @@ local function main()
 			})
 			Instance.new("UICorner", dumpBtn).CornerRadius = UDim.new(0.02, 0)
 			Lib.ButtonAnim(dumpBtn, {Mode = 2})
+
+			local showCoreScripts = false
+			local coreToggleBtn = createSimple("TextButton", {
+				Parent = statusLabel,
+				BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+				BorderSizePixel = 0,
+				Position = UDim2.new(1, -142, 0, 2),
+				Size = UDim2.new(0, 80, 0, 16),
+				Font = Enum.Font.SourceSans,
+				Text = "Core: OFF",
+				TextColor3 = Color3.fromRGB(200, 200, 200),
+				TextSize = 12,
+				AutoButtonColor = false
+			})
+			Instance.new("UICorner", coreToggleBtn).CornerRadius = UDim.new(0.02, 0)
+			Lib.ButtonAnim(coreToggleBtn, {Mode = 2})
 
 			local cfgFrame = createSimple("Frame", {
 				Parent = content,
@@ -1588,6 +1604,60 @@ local function main()
 
 			local lastYieldClock = os.clock()
 			local waiting = 0.030
+
+			-- Ouroboros prevention: marker key to tag scanner-internal tables
+			local DEX_XREF_IGNORE_KEY = "__DEX_XREF_IGNORE"
+			resultBuffer[DEX_XREF_IGNORE_KEY] = true
+			resultSeen[DEX_XREF_IGNORE_KEY] = true
+			copyLines[DEX_XREF_IGNORE_KEY] = true
+			scanTasks[DEX_XREF_IGNORE_KEY] = true
+			rankedChains[DEX_XREF_IGNORE_KEY] = true
+			chainCache[DEX_XREF_IGNORE_KEY] = true
+
+			-- CoreScript detection
+			local coreContainers
+			local function isCorescript(inst)
+				if typeof(inst) ~= "Instance" then return false end
+				if not coreContainers then
+					coreContainers = {}
+					pcall(function() coreContainers[#coreContainers+1] = game:GetService("CoreGui") end)
+					pcall(function() coreContainers[#coreContainers+1] = game:GetService("CorePackages") end)
+				end
+				for _, container in ipairs(coreContainers) do
+					local ok, result = pcall(function() return inst:IsDescendantOf(container) end)
+					if ok and result then return true end
+				end
+				return false
+			end
+
+			-- Dex self-scan detection
+			local windowGui = window and window.Gui
+			local function isDexInternal(holder, value)
+				-- Skip tables marked as scanner-internal
+				if type(holder) == "table" then
+					local ok, marked = pcall(rawget, holder, DEX_XREF_IGNORE_KEY)
+					if ok and marked then return true end
+				end
+				if type(value) == "table" then
+					local ok, marked = pcall(rawget, value, DEX_XREF_IGNORE_KEY)
+					if ok and marked then return true end
+				end
+
+				-- Skip the global nodes table itself
+				if holder == nodes or value == nodes then return true end
+
+				-- Skip Dex's own GUI descendants (xref window UI elements)
+				if windowGui and typeof(holder) == "Instance" then
+					local ok, result = pcall(function() return holder:IsDescendantOf(windowGui) end)
+					if ok and result then return true end
+				end
+				if windowGui and typeof(value) == "Instance" then
+					local ok, result = pcall(function() return value:IsDescendantOf(windowGui) end)
+					if ok and result then return true end
+				end
+
+				return false
+			end
 
 			local function spawnScanTask(fn)
 				local t = task.spawn(fn)
@@ -1822,9 +1892,30 @@ local function main()
 			end
 
 			local function addResult(source, path, value, holder, seedSteps, baseScore, weakReason)
+				-- Ouroboros / Dex internal filter
+				if isDexInternal(holder, value) then return end
+
 				local key = tostring(source) .. "|" .. tostring(path) .. "|" .. getHolderId(holder or value)
 				if resultSeen[key] then
 					return
+				end
+
+				-- Determine CoreScript origin from seed steps
+				local isCoreResult = false
+				if seedSteps then
+					for _, step in ipairs(seedSteps) do
+						if step.RootScript and isCorescript(step.RootScript) then
+							isCoreResult = true
+							break
+						end
+						if typeof(step.Holder) == "Instance" and isCorescript(step.Holder) then
+							isCoreResult = true
+							break
+						end
+					end
+				end
+				if not isCoreResult and typeof(holder) == "Instance" then
+					isCoreResult = isCorescript(holder)
 				end
 
 				resultSeen[key] = true
@@ -1836,7 +1927,8 @@ local function main()
 					Holder = holder,
 					SeedSteps = seedSteps or {},
 					BaseScore = baseScore or 0,
-					WeakReason = weakReason
+					WeakReason = weakReason,
+					IsCoreScript = isCoreResult
 				}
 			end
 
@@ -2422,6 +2514,84 @@ local function main()
 				return table.concat(lines, "\n")
 			end
 
+			local renderedEntries = {} -- stores GUI entry objects for rebuild
+
+			local function makeEntryText(res)
+				local firstStep = res.SeedSteps and res.SeedSteps[1]
+				local displayText = "[" .. tostring(res.Source) .. "] " .. tostring(res.Path)
+				if firstStep and firstStep.Label then
+					displayText = displayText .. "  <- " .. firstStep.Label
+				end
+				return displayText
+			end
+
+			local function shouldShowResult(res)
+				if res.IsCoreScript and not showCoreScripts then
+					return false
+				end
+				return true
+			end
+
+			local function rebuildRenderedList()
+				-- Clear existing entries from the scrollFrame
+				for _, entry in ipairs(renderedEntries) do
+					pcall(function() entry:Destroy() end)
+				end
+				table.clear(renderedEntries)
+				table.clear(copyLines)
+
+				local visibleCount = 0
+				for i = 1, resultCount do
+					local res = resultBuffer[i]
+					if shouldShowResult(res) then
+						visibleCount = visibleCount + 1
+						local displayText = makeEntryText(res)
+						copyLines[visibleCount] = displayText
+
+						local vi = visibleCount
+						local entry = createSimple("TextButton", {
+							Parent = scrollFrame,
+							BackgroundColor3 = (vi % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
+							BackgroundTransparency = 0,
+							BorderSizePixel = 0,
+							Size = UDim2.new(1, 0, 0, 20),
+							Font = Enum.Font.Code,
+							Text = "  " .. displayText,
+							TextColor3 = res.IsCoreScript and Color3.fromRGB(140, 140, 160) or Color3.fromRGB(190, 190, 190),
+							TextSize = 12,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							AutoButtonColor = false,
+							LayoutOrder = vi,
+							TextTruncate = Enum.TextTruncate.AtEnd
+						})
+
+						entry.MouseEnter:Connect(function()
+							entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+						end)
+						entry.MouseLeave:Connect(function()
+							entry.BackgroundColor3 = (vi % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
+						end)
+
+						renderedEntries[#renderedEntries + 1] = entry
+					end
+				end
+
+				scrollFrame.CanvasSize = UDim2.new(0, 0, 0, visibleCount * 20)
+				if not scanning then
+					statusLabel.Text = ("  %d xref(s) (showing %d)"):format(resultCount, visibleCount)
+				end
+			end
+
+			-- CoreScript toggle button handler
+			coreToggleBtn.MouseButton1Click:Connect(function()
+				showCoreScripts = not showCoreScripts
+				coreToggleBtn.Text = showCoreScripts and "Core: ON" or "Core: OFF"
+				coreToggleBtn.BackgroundColor3 = showCoreScripts
+					and Color3.fromRGB(50, 100, 60)
+					or Color3.fromRGB(60, 60, 60)
+				rebuildRenderedList()
+			end)
+
 			renderCon = game:GetService("RunService").Heartbeat:Connect(function()
 				if not scrollFrame.Parent then
 					renderCon:Disconnect()
@@ -2435,41 +2605,44 @@ local function main()
 
 					local i = rendered
 					local res = resultBuffer[i]
-					local firstStep = res.SeedSteps and res.SeedSteps[1]
-					local displayText = "[" .. tostring(res.Source) .. "] " .. tostring(res.Path)
+					local displayText = makeEntryText(res)
+					
+					-- Skip CoreScript results if toggle is OFF
+					if not shouldShowResult(res) then
+						-- Still counted but not rendered
+					else
+						local vi = #renderedEntries + 1
+						copyLines[vi] = displayText
 
-					if firstStep and firstStep.Label then
-						displayText = displayText .. "  <- " .. firstStep.Label
+						local entry = createSimple("TextButton", {
+							Parent = scrollFrame,
+							BackgroundColor3 = (vi % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
+							BackgroundTransparency = 0,
+							BorderSizePixel = 0,
+							Size = UDim2.new(1, 0, 0, 20),
+							Font = Enum.Font.Code,
+							Text = "  " .. displayText,
+							TextColor3 = res.IsCoreScript and Color3.fromRGB(140, 140, 160) or Color3.fromRGB(190, 190, 190),
+							TextSize = 12,
+							TextXAlignment = Enum.TextXAlignment.Left,
+							AutoButtonColor = false,
+							LayoutOrder = vi,
+							TextTruncate = Enum.TextTruncate.AtEnd
+						})
+
+						entry.MouseEnter:Connect(function()
+							entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+						end)
+						entry.MouseLeave:Connect(function()
+							entry.BackgroundColor3 = (vi % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
+						end)
+
+						renderedEntries[#renderedEntries + 1] = entry
 					end
-
-					copyLines[i] = displayText
-
-					local entry = createSimple("TextButton", {
-						Parent = scrollFrame,
-						BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32),
-						BackgroundTransparency = 0,
-						BorderSizePixel = 0,
-						Size = UDim2.new(1, 0, 0, 20),
-						Font = Enum.Font.Code,
-						Text = "  " .. displayText,
-						TextColor3 = Color3.fromRGB(190, 190, 190),
-						TextSize = 12,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						AutoButtonColor = false,
-						LayoutOrder = i,
-						TextTruncate = Enum.TextTruncate.AtEnd
-					})
-
-					entry.MouseEnter:Connect(function()
-						entry.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-					end)
-					entry.MouseLeave:Connect(function()
-						entry.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 38) or Color3.fromRGB(32, 32, 32)
-					end)
 				end
 
-				if batch > 0 then
-					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, rendered * 20)
+				if #renderedEntries > 0 then
+					scrollFrame.CanvasSize = UDim2.new(0, 0, 0, #renderedEntries * 20)
 				end
 
 				
@@ -2481,11 +2654,11 @@ local function main()
 						math.floor(160 - 40 * pct),
 						math.floor(255 - 155 * pct)
 					)
-					statusLabel.Text = ("  %d xref(s) - scanning... %.2f%%"):format(rendered, pct * 100)
+					statusLabel.Text = ("  %d xref(s) (showing %d) - scanning... %.2f%%"):format(resultCount, #renderedEntries, pct * 100)
 				end
 
 				if not scanning and rendered >= resultCount then
-					statusLabel.Text = "  " .. resultCount .. " xref(s)"
+					statusLabel.Text = ("  %d xref(s) (showing %d)"):format(resultCount, #renderedEntries)
 					progressBarFill.Size = UDim2.new(1, 0, 1, 0)
 					progressBarBg.Visible = false
 					window:SetTitle("Xrefs: " .. tostring(target))
