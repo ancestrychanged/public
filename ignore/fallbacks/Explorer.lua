@@ -1415,9 +1415,12 @@ local function main()
 
 				if not inspector then
 					if isfile("table_inspector_src.lua") then
-						local sss, srcccc = pcall(loadfile, "table_inspector_src.lua")
-						if sss then
-							inspector = srcccc
+						local sss, chunk = pcall(loadfile, "table_inspector_src.lua")
+						if sss and chunk then
+							local okRun, loaded = pcall(chunk)
+							if okRun and type(loaded) == "table" then
+								inspector = loaded
+							end
 						end
 					end
 				end
