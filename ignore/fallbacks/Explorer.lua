@@ -2023,6 +2023,8 @@ local function main()
 								break
 							end
 						end
+
+						topYield()
 						if #found >= cLimit then break end
 					end
 				end)
@@ -2045,6 +2047,8 @@ local function main()
 								break
 							end
 						end
+
+						topYield()
 						if #found >= cLimit then break end
 					end
 				end)
@@ -2071,6 +2075,8 @@ local function main()
 								end
 							end
 						end
+
+						topYield()
 						if #found >= cLimit then break end
 					end
 				end)
@@ -2107,6 +2113,8 @@ local function main()
 								end
 							end
 						end
+
+						topYield()
 						if #found >= cLimit then break end
 					end
 				end)
@@ -2142,6 +2150,8 @@ local function main()
 								end
 							end
 						end
+
+						topYield()
 						if #found >= cLimit then break end
 					end
 				end)
