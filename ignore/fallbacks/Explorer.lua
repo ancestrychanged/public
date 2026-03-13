@@ -1558,6 +1558,10 @@ local function main()
 			local YIELD_BUDGET = 0.030 
 
 			local function topYield(iterInPhase, totalInPhase)
+				if not scrollFrame.Parent then
+					scanning = false
+					coroutine.yield()
+				end
 				
 				if totalInPhase and totalInPhase > 0 and iterInPhase then
 					local phaseWeight = phaseWeights[phasesCompleted + 1] or 0
@@ -2246,7 +2250,10 @@ local function main()
 
 				local seenText = {}
 
-				for i = 1, resultCount do
+				table.sort(resultBuffer, function(a, b) return (a.BaseScore or 0) > (b.BaseScore or 0) end)
+				local maxToProcess = math.min(resultCount, 30)
+
+				for i = 1, maxToProcess do
 					local text, score, weakTable = buildRetentionChain(resultBuffer[i])
 					if text and not seenText[text] then
 						seenText[text] = true
