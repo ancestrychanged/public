@@ -1578,7 +1578,7 @@ local function main()
 				end
 
 				local info = getFnInfo(fn)
-				local rawSource = info.Source
+				local rawSource = info and info.Source
 				if rawSource and rawSource ~= "=[C]" then
 					local sourcePath = tostring(rawSource):gsub("^@?", "")
 					local found = game:FindFirstChild(sourcePath, true)
@@ -1601,37 +1601,39 @@ local function main()
 				end
 
 				local mt = getrawmetatable(tbl)
-				for _, key in ipairs(candidates) do
-					local scr = rawget(mt, key)
-					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
-						return scr, "metatable." .. key
+				if type(mt) == "table" then
+					for _, key in ipairs(candidates) do
+						local scr = rawget(mt, key)
+						if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+							return scr, "metatable." .. key
+						end
 					end
 				end
 
 				return nil, nil
 			end
 
-			local function labelForFunction(fn, info, scriptObj)
-				local label = "function " .. ((info and info.Display) or tostring(fn))
-				if scriptObj then
-					label = label .. " @ " .. safePath(scriptObj)
+				local function labelForFunction(fn, info, scriptObj)
+					local label = "function " .. ((info and info.Display) or tostring(fn))
+					if scriptObj then
+						label = label .. " @ " .. safePath(scriptObj)
+					end
+					return label
 				end
-				return label
-			end
 
-			local function labelForTable(tbl, scriptObj)
-				if scriptObj then
-					return "table @ " .. safePath(scriptObj)
+				local function labelForTable(tbl, scriptObj)
+					if scriptObj then
+						return "table @ " .. safePath(scriptObj)
+					end
+					return "table " .. tostring(tbl)
 				end
-				return "table " .. tostring(tbl)
-			end
 
-			local function labelForThread(threadObj, scriptObj)
-				if scriptObj then
-					return "thread @ " .. safePath(scriptObj)
+				local function labelForThread(threadObj, scriptObj)
+					if scriptObj then
+						return "thread @ " .. safePath(scriptObj)
+					end
+					return "thread " .. tostring(threadObj)
 				end
-				return "thread " .. tostring(threadObj)
-			end
 
 			local function getHolderId(holder)
 				if holder == nil then
@@ -1777,38 +1779,40 @@ local function main()
 					end
 					visited[val] = true
 
-					local ups = debug.getupvalues(val)
+					local okUps, ups = pcall(debug.getupvalues, val)
 					local fnInfo = getFnInfo(val)
 					local fnScript = select(1, inferScriptFromFunction(val))
 
-					for ui, uv in pairs(ups) do
-						budget.count = budget.count + 1
-						if budget.count >= howmuch then
-							break
-						end
+					if okUps and type(ups) == "table" then
+						for ui, uv in pairs(ups) do
+							budget.count = budget.count + 1
+							if budget.count >= howmuch then
+								break
+							end
 
-						if uv == target then
-							addResult(
-								source,
-								path .. ".upval[" .. ui .. "]",
-								target,
-								val,
-								{
-									makeStep(
-										"function-upvalue",
-										val,
-										"upval[" .. ui .. "]",
-										labelForFunction(val, fnInfo, fnScript),
-										112,
-										fnScript,
-										fnInfo
-									)
-								},
-								112,
-								nil
-							)
-						elseif type(uv) == "table" then
-							scanValue(uv, source, path .. ".upval[" .. ui .. "]", depth + 1, fnScript or ownerScript, ownerHint, visited, budget)
+							if uv == target then
+								addResult(
+									source,
+									path .. ".upval[" .. ui .. "]",
+									target,
+									val,
+									{
+										makeStep(
+											"function-upvalue",
+											val,
+											"upval[" .. ui .. "]",
+											labelForFunction(val, fnInfo, fnScript),
+											112,
+											fnScript,
+											fnInfo
+										)
+									},
+									112,
+									nil
+								)
+							elseif type(uv) == "table" then
+								scanValue(uv, source, path .. ".upval[" .. ui .. "]", depth + 1, fnScript or ownerScript, ownerHint, visited, budget)
+							end
 						end
 					end
 				end
@@ -2004,18 +2008,21 @@ local function main()
 					for _, fn in ipairs(fns) do
 						local fnInfo = getFnInfo(fn)
 						local fnScript = select(1, inferScriptFromFunction(fn))
-						for ui, uv in pairs(debug.getupvalues(fn)) do
-							if uv == node then
-								push(makeStep(
-									"function-upvalue",
-									fn,
-									"upval[" .. ui .. "]",
-									labelForFunction(fn, fnInfo, fnScript),
-									112,
-									fnScript,
-									fnInfo
-								))
-								break
+						local okUps, ups = pcall(debug.getupvalues, fn)
+						if okUps and type(ups) == "table" then
+							for ui, uv in pairs(ups) do
+								if uv == node then
+									push(makeStep(
+										"function-upvalue",
+										fn,
+										"upval[" .. ui .. "]",
+										labelForFunction(fn, fnInfo, fnScript),
+										112,
+										fnScript,
+										fnInfo
+									))
+									break
+								end
 							end
 						end
 						if #found >= cLimit then break end
