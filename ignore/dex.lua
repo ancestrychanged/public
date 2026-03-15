@@ -407,7 +407,6 @@ Main = (function()
 	end
 
 	Main.LoadModule = function(name)
-		print("[DEX DEBUG] LoadModule called for: " .. tostring(name))
 		local path = "dex/" .. name .. ".lua"
 		
 		if not isfile(path) then
