@@ -910,7 +910,7 @@ local function main()
 		context:AddRegistered("INSERT_OBJECT")
 		context:AddRegistered("SAVE_INST")
 		context:AddRegistered("COPY_API_PAGE")
-		context:AddRegistered("SHOW_XREFS", not (filtergc or getgc or get_gc_objects or getconnections or get_signal_cons or getcallbackvalue or getcallbackmember or getallthreads or env.getreg or env.getregistry))
+		context:AddRegistered("SHOW_XREFS")
 
 		context:QueueDivider()
 
@@ -1354,7 +1354,8 @@ local function main()
 
 		end})]]
 
-		context:Register("SHOW_XREFS",{Name = "Show xrefs", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function()
+		-- writing code like 2026's Judas 🔥🔥
+		context:Register("SHOW_XREFS",{Name = "Show xrefs", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function() 
 			local sList = selection.List
 			if #sList == 0 then return end
 			local target = sList[1].Obj
@@ -1407,7 +1408,7 @@ local function main()
 
 			local inspector
 			do
-				inspector = getgenv().__DEX_TABLE_INSPECTOR
+				inspector = getgenv()._dexTblInspect
 
 				if not inspector then
 					if isfile("table_inspector_src.lua") then
@@ -1421,12 +1422,12 @@ local function main()
 					end
 				end
 
-				getgenv().__DEX_TABLE_INSPECTOR = inspector
+				getgenv()._dexTblInspect = inspector
 			end
 
 			local signalsAPI
 			do
-				signalsAPI = getgenv().__DEX_SIGNALS_API
+				signalsAPI = getgenv()._dexSignals
 
 				if not signalsAPI then
 					if isfile("SignalsAndConnections.lua") then
@@ -1440,7 +1441,7 @@ local function main()
 					end
 				end
 
-				getgenv().__DEX_SIGNALS_API = signalsAPI
+				getgenv()._dexSignals = signalsAPI
 			end
 
 			local window = Lib.Window.new()
@@ -1893,12 +1894,12 @@ local function main()
 				return "table " .. tostring(tbl)
 			end
 
-				local function labelForThread(threadObj, scriptObj)
-					if scriptObj then
-						return "thread @ " .. safePath(scriptObj)
-					end
-					return "thread " .. tostring(threadObj)
+			local function labelForThread(threadObj, scriptObj)
+				if scriptObj then
+					return "thread @ " .. safePath(scriptObj)
 				end
+				return "thread " .. tostring(threadObj)
+			end
 
 			local function getHolderId(holder)
 				if holder == nil then
