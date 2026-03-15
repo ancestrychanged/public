@@ -741,18 +741,10 @@ Main = (function()
 					return newTbl
 				end
 
-				local function deepMerge(target, source)
-					for k, v in pairs(source) do
-						if type(v) == "table" and type(target[k]) == "table" then
-							deepMerge(target[k], v)
-						else
-							target[k] = v
-						end
-					end
-				end
-
 				local deserializedData = recur(decoded)
-				deepMerge(Settings, deserializedData)
+				for k, v in pairs(deserializedData) do
+					Settings[k] = v
+				end
 				Main.ValidateSettings()
 
 			else
