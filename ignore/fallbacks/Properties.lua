@@ -401,7 +401,7 @@ local function main()
 		local RMDCustomOrders = RMD.PropertyOrders
 		local getAttributes = game.GetAttributes
 		local maxAttrs = Settings.Properties.MaxAttributes
-		local showingAttrs = Settings.Properties.ShowAttributes
+		local showingAttrs = Settings.Properties and Settings.Properties.ShowAttributes
 		local foundAttrs = {}
 		local attrCount = 0
 		local typeof = typeof
@@ -785,7 +785,9 @@ local function main()
 		end)
 
 		nameFrame.ToggleAttributes.MouseButton1Click:Connect(function()
-			Settings.Properties.ShowAttributes = not Settings.Properties.ShowAttributes
+			if Settings.Properties then
+				Settings.Properties.ShowAttributes = not Settings.Properties.ShowAttributes
+			end
 			Properties.ShowExplorerProps()
 		end)
 
@@ -1018,7 +1020,9 @@ local function main()
 				local valType = {Name = Properties.TypeNameConvert[typ] or typ, Category = "DataType"}
 				local attrProp = {IsAttribute = true, Name = "ATTR_"..name, AttributeName = name, DisplayName = name, Class = "Instance", ValueType = valType, Category = "Attributes", Tags = {}}
 
-				Settings.Properties.ShowAttributes = true
+				if Settings.Properties then
+					Settings.Properties.ShowAttributes = true
+				end
 				Properties.SetProp(attrProp,Properties.DefaultPropValue[valType.Name],true,Properties.EditingAttribute)
 				Properties.ShowExplorerProps()
 				win:Close()
@@ -1452,7 +1456,7 @@ local function main()
 						nameFrame.Size = UDim2.new(1,0,1,0)
 						editAttributeButton.Visible = false
 
-						local showingAttrs = Settings.Properties.ShowAttributes
+						local showingAttrs = Settings.Properties and Settings.Properties.ShowAttributes
 						toggleAttributes.Position = UDim2.new(1,-85-leftOffset,0,0)
 						toggleAttributes.Text = (showingAttrs and "[Setting: ON]" or "[Setting: OFF]")
 						toggleAttributes.TextColor3 = Settings.Theme.Text
