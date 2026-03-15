@@ -907,10 +907,10 @@ local function main()
 
 		if expanded == Explorer.SearchExpanded then context:AddRegistered("CLEAR_SEARCH_AND_JUMP_TO") end
 		if env.setclipboard then context:AddRegistered("COPY_PATH") end
+		context:AddRegistered("SHOW_XREFS")
 		context:AddRegistered("INSERT_OBJECT")
 		context:AddRegistered("SAVE_INST")
 		context:AddRegistered("COPY_API_PAGE")
-		context:AddRegistered("SHOW_XREFS")
 
 		context:QueueDivider()
 
