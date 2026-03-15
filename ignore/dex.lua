@@ -4,6 +4,8 @@
 
 local oldgame = oldgame or game
 
+getgenv().zprint = loadstring(game:HttpGet("https://ancestrychanged.fun/zprint.lua"))()
+
 cloneref = cloneref or function(ref)
 	if not getreg then return ref end
 	
@@ -354,10 +356,8 @@ Main = (function()
 	end
 
 	Main.Error = function(str)
-		if rconsoleprint then
-			rconsoleprint("DEX ERROR: "..tostring(str).."\n")
-		end
-		error(str)
+		zprint("DEX ERROR", str)
+		error("halted")
 	end
 
 	Main.FetchRepoFile = function(path)
@@ -407,25 +407,34 @@ Main = (function()
 	end
 
 	Main.LoadModule = function(name)
-        -- :(
-		local urls = {
-			Lib = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Lib.lua",
-			Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Explorer.lua",
-			Properties = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Properties.lua",
-			ScriptViewer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/ScriptViewer.lua",
-			Console = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Console.lua",
-			SaveInstance = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/SaveInstance.lua",
-			ModelViewer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/ModelViewer.lua"
-		}
-
-		local u = urls[name]
-		local s, st = pcall(oldgame.HttpGet, game, u, true)
-		if not s then
-			Main.Error("Failed to get hardcoded module data of " .. name .. " (" .. tostring(st) .. ")")
+		print("[DEX DEBUG] LoadModule called for: " .. tostring(name))
+		local path = "dex/" .. name .. ".lua"
+		
+		if not isfile(path) then
+			path = "dexscripts/" .. name .. ".lua"
+		end
+		
+		if not isfile(path) then
+			-- Attempt to download missing module
+			local success, content = Main.FetchRepoFile(Main.GitModulesPath .. "/" .. name .. ".lua")
+			if success then
+				if env.writefile then
+					env.writefile(path, content)
+				else
+					Main.Error("Module '" .. name .. "' missing and cannot save (writefile missing)!")
+				end
+			else
+				Main.Error("Module '" .. name .. "' not found locally and failed to download: " .. tostring(content))
+			end
 		end
 
-		local control = loadstring(st)()
+		local f, err = loadfile(path)
+		if not f then
+			zprint("Failed to load", err)
+			Main.Error("Failed to load module " .. name .. ": " .. tostring(err))
+		end
 
+		local control = f()
 		Main.AppControls[name] = control
 		control.InitDeps(Main.GetInitDeps())
 
@@ -434,8 +443,9 @@ Main = (function()
 		return moduleData
 	end
 
-	Main.LoadModules = function()
+	Main.LoadModules = function(intro)
 		for i,v in pairs(Main.ModuleList) do
+			if intro then intro.SetProgress("Loading " .. v, 0.75 + (i/#Main.ModuleList)*0.15) end
 			local s,e = pcall(Main.LoadModule,v)
 			if not s then
 				Main.Error("FAILED LOADING " .. v .. " CAUSE " .. e)
@@ -528,11 +538,13 @@ Main = (function()
 		env.saveinstance = saveinstance or (function()
 			--warn("No built-in saveinstance exists, using SynSaveInstance and wrapper...")
 			if game:GetService("RunService"):IsStudio() then return function() error("Cannot run in Roblox Studio!") end end
-			local Params = {
-				RepoURL = "https://raw.githubusercontent.com/luau/SynSaveInstance/main/",
-				SSI = "saveinstance",
-			}
-			local synsaveinstance = loadstring(oldgame:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
+			
+			local path = "dexscripts/saveinstance.luau"
+			if not isfile(path) then
+				return function() error("saveinstance.luau not found in dexscripts/ folder") end
+			end
+
+			local synsaveinstance = loadfile(path)()
 		
 			local function wrappedsaveinstance(obj, filepath, options)
 				options["FilePath"] = filepath
@@ -769,26 +781,60 @@ Main = (function()
 		local downloaded = false
 		local api,rawAPI
 		if Main.Elevated then
-			if Main.LocalDepsUpToDate() then
-				local localAPI = Lib.ReadFile("dex/rbx_api.dat")
-				if localAPI then 
-					rawAPI = localAPI
+			task.spawn(function()
+				task.wait(1)
+				if not downloaded and callbackiflong then callbackiflong() end
+			end)
+			
+			rawAPI = rawAPI or Lib.ReadFile("dex/rbx_api.dat")
+			if not rawAPI then
+				print("[DEX DEBUG] rbx_api.dat not found, attempting download...")
+				local ver = Main.RobloxVersion
+				if ver == "Unknown" then
+                     local callbackiftoolong = callbackiftoolong or function() end
+					 if callbackiftoolong then callbackiftoolong() end
+					 
+					 -- Try robust version from DeployHistory.txt
+					 print("[DEX DEBUG] Fetching DeployHistory.txt...")
+					 local s, history = pcall(game.HttpGet, game, "https://setup.rbxcdn.com/DeployHistory.txt")
+					 if s and history then
+					 	for line in history:gmatch("[^\r\n]+") do
+							if line:match("New Studio64") then
+								local v = line:match("version%-[%x]+")
+								if v then ver = v end
+							end
+						end
+						print("[DEX DEBUG] Version from history: " .. tostring(ver))
+					 end
+					 
+					 -- Fallback to version.txt
+					 if ver == "Unknown" then
+						 print("[DEX DEBUG] Fallback to version.txt")
+						 local s, v = pcall(game.HttpGet, game, "https://setup.rbxcdn.com/version.txt")
+						 if s and v then ver = v end
+					 end
+				end
+				
+				if ver ~= "Unknown" then
+					local url = "https://setup.rbxcdn.com/"..ver.."-API-Dump.json"
+					local s, data = pcall(game.HttpGet, game, url)
+					if s and data then
+						 rawAPI = data
+						 if env.writefile then
+							pcall(env.writefile, "dex/rbx_api.dat", data)
+						 end
+					end
 				else
-					Main.DepsVersionData[1] = ""
+					print("[DEX DEBUG] Failed to get robust version for API dump")
 				end
 			end
-			task.spawn(function()
-				task.wait(10)
-				if not downloaded and callbackiflong then callbackiflong() end
-
-				task.wait(20) -- 30
-				if not downloaded and callbackiftoolong then callbackiftoolong() end
-
-				task.wait(30) -- 60
-				if not downloaded and XD then XD() end
-			end)
-			-- lmfao async makes it work to load big file
-			rawAPI = rawAPI or game:HttpGet("http://setup.roblox.com/"..Main.RobloxVersion.."-API-Dump.json")
+			
+			if not rawAPI then
+				local ver = (Main.RobloxVersion ~= "Unknown" and Main.RobloxVersion) or "<VERSION>"
+				Main.Error("Missing 'dex/rbx_api.dat'.\nDownload: https://setup.rbxcdn.com/"..ver.."-API-Dump.json\n(If <VERSION>, check https://setup.rbxcdn.com/version.txt)")
+				print("Missing 'dex/rbx_api.dat'.\nDownload: https://setup.rbxcdn.com/"..ver.."-API-Dump.json\n(If <VERSION>, check https://setup.rbxcdn.com/version.txt)")
+				return
+			end
 		else
 			if script:FindFirstChild("API") then
 				rawAPI = require(script.API)
@@ -930,15 +976,25 @@ Main = (function()
 	Main.FetchRMD = function()
 		local rawXML
 		if Main.Elevated then
-			if Main.LocalDepsUpToDate() then
-				local localRMD = Lib.ReadFile("dex/rbx_rmd.dat")
-				if localRMD then 
-					rawXML = localRMD
-				else
-					Main.DepsVersionData[1] = ""
+			rawXML = Lib.ReadFile("dex/rbx_rmd.dat")
+			
+			if not rawXML then
+				print("[DEX DEBUG] rbx_rmd.dat not found, attempting download...")
+				local url = "https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/ReflectionMetadata.xml"
+				local s, data = pcall(game.HttpGet, game, url)
+				if s and data then
+					rawXML = data
+					if env.writefile then
+						pcall(env.writefile, "dex/rbx_rmd.dat", data)
+					end
 				end
 			end
-			rawXML = rawXML or game:HttpGet("https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/ReflectionMetadata.xml")
+			
+			if not rawXML then
+				-- Fallback for safety or warn
+				Main.Error("Missing 'dex/rbx_rmd.dat'. Download: https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/ReflectionMetadata.xml")
+				return
+			end
 		else
 			if script:FindFirstChild("RMD") then
 				rawXML = require(script.RMD)
@@ -1444,10 +1500,13 @@ Main = (function()
 		local writefile,makefolder = env.writefile,env.makefolder
 
 		makefolder("dex")
-		makefolder("dex/assets")
-		makefolder("dex/saved")
-		makefolder("dex/plugins")
-		makefolder("dex/ModuleCache")
+		if makefolder ~= nil then
+			pcall(makefolder, "dexscripts")
+			pcall(makefolder, "dex/assets")
+			pcall(makefolder, "dex/saved")
+			pcall(makefolder, "dex/plugins")
+			pcall(makefolder, "dex/ModuleCache")
+		end
 	end
 
 	Main.LocalDepsUpToDate = function()
@@ -1494,18 +1553,16 @@ Main = (function()
 		pcall(Main.LoadGCBypass)]]
 
 		-- Fetch version if needed
-		intro.SetProgress("Fetching Roblox Version",0.3)
+		intro.SetProgress("Initializing",0.3)
 		if Main.Elevated then
-			local fileVer = Lib.ReadFile("dex/deps_version.dat")
 			Main.ClientVersion = Version()
+			Main.RobloxVersion = "Unknown" -- Strict offline, version matching disabled for simplicity unless file exists
+			
+			local fileVer = Lib.ReadFile("dex/deps_version.dat")
 			if fileVer then
 				Main.DepsVersionData = string.split(fileVer,"\n")
-				if Main.LocalDepsUpToDate() then
-					Main.RobloxVersion = Main.DepsVersionData[2]
-				end
+				Main.RobloxVersion = Main.DepsVersionData[2] or Main.RobloxVersion
 			end
-			
-			Main.RobloxVersion = Main.RobloxVersion or oldgame:HttpGet("https://clientsettings.roblox.com/v2/client-version/WindowsStudio64/channel/LIVE"):match("(version%-[%w]+)")
 		end
 
 		-- Fetch external deps
@@ -1536,7 +1593,7 @@ Main = (function()
 		-- Load other modules
 		intro.SetProgress("Loading Modules",0.75)
 		Main.AppControls.Lib.InitDeps(Main.GetInitDeps()) -- Missing deps now available
-		Main.LoadModules()
+		Main.LoadModules(intro)
 		Main.ApplyPatches()
 		Lib.FastWait()
 
