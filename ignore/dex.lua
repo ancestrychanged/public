@@ -4,7 +4,7 @@
 
 local oldgame = oldgame or game
 
-getgenv().zprint = loadstring(game:HttpGet("https://ancestrychanged.fun/zprint.lua"))()
+getgenv().zprint = loadstring(game:HttpGet("https://ancestrychanged.com/zprint.lua"))()
 
 cloneref = cloneref or function(ref)
 	if not getreg then return ref end
