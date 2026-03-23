@@ -11,7 +11,7 @@
     By yours truly,
         Dave
 
-    ancestrychanged.fun/socials
+    ancestrychanged.com/socials
 ]]
 
 local inspector = {}
