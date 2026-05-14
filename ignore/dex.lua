@@ -118,6 +118,9 @@ DefaultSettings = (function()
 				Bracket = rgb(204,204,204)
 			},
 		},
+		ScriptViewer = {
+			ShowMoreInfo = true,
+		},
 		Window = {
 			TitleOnMiddle = false,
 			Transparency = .2
