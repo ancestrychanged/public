@@ -1633,7 +1633,7 @@ end)()
 
 do
 	local CustomModules = {
-		Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/Explorer.lua",
+		Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Explorer.lua",
 	}
 
 	if writefile and isfile then
