@@ -1624,7 +1624,7 @@ local function main()
 			local phaseBase = 0
 
 			local lastYieldClock = os.clock()
-			local waiting = 0.030
+			local waiting = 0.008
 
 			local xrefIgnore = "__DEX_XREF_IGNORE"
 			resultBuffer[xrefIgnore] = true
@@ -2226,12 +2226,14 @@ local function main()
 					end
 				end
 
-				for className, signals in pairs(signalsAPI.Events) do
-					local isA = false
-					pcall(function() isA = obj:IsA(className) end)
-					if isA then
-						for _, sigName in ipairs(signals) do
-							add(sigName)
+				if signalsAPI and signalsAPI.Events then
+					for className, signals in pairs(signalsAPI.Events) do
+						local isA = false
+						pcall(function() isA = obj:IsA(className) end)
+						if isA then
+							for _, sigName in ipairs(signals) do
+								add(sigName)
+							end
 						end
 					end
 				end
