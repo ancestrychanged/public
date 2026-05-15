@@ -1631,6 +1631,27 @@ Main = (function()
 	return Main
 end)()
 
+do
+	local CustomModules = {
+		Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/Explorer.lua",
+	}
+
+	if writefile and isfile then
+		pcall(function() makefolder("dex") end)
+		pcall(function() makefolder("dexscripts") end)
+
+		for name, url in pairs(CustomModules) do
+			local ok, body = pcall(oldgame.HttpGet, oldgame, url)
+			if ok and type(body) == "string" and #body > 0 and not body:find("404: Not Found", 1, true) then
+				pcall(writefile, "dex/" .. name .. ".lua", body)
+				pcall(writefile, "dexscripts/" .. name .. ".lua", body)
+			else
+				warn("[Dex] Failed to fetch custom module '" .. name .. "': " .. tostring(body))
+			end
+		end
+	end
+end
+
 -- Start
 Main.Init()
 
