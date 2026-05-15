@@ -239,9 +239,9 @@ Main = (function()
 	Main.AppControls = {}
 	Main.Apps = Apps
 	Main.MenuApps = {}
-	Main.GitRepoName = "AZYsGithub/DexPlusPlus"
+	Main.GitRepoName = "ancestrychanged/public"
 	Main.GitRepoBranch = "main"
-	Main.GitModulesPath = "modules"
+	Main.GitModulesPath = "ignore/fallbacks"
 
 	Main.DisplayOrders = {
 		SideWindow = 8,
@@ -1632,21 +1632,45 @@ Main = (function()
 end)()
 
 do
+	local repoBase = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/"
+
 	local CustomModules = {
-		Explorer = "https://raw.githubusercontent.com/ancestrychanged/public/refs/heads/main/ignore/fallbacks/Explorer.lua",
+		Explorer = repoBase .. "Explorer.lua",
 	}
+
+	local RootDeps = {
+		["SignalsAndConnections.lua"] = repoBase .. "SignalsAndConnections.lua",
+		["table_inspector_src.lua"] = repoBase .. "table_inspector_src.lua",
+	}
+
+	local function fetch(url)
+		local ok, body = pcall(oldgame.HttpGet, oldgame, url)
+		if ok and type(body) == "string" and #body > 0 and not body:find("404: Not Found", 1, true) then
+			return body
+		end
+		return nil, body
+	end
 
 	if writefile and isfile then
 		pcall(function() makefolder("dex") end)
 		pcall(function() makefolder("dexscripts") end)
 
 		for name, url in pairs(CustomModules) do
-			local ok, body = pcall(oldgame.HttpGet, oldgame, url)
-			if ok and type(body) == "string" and #body > 0 and not body:find("404: Not Found", 1, true) then
+			local body, err = fetch(url)
+			if body then
 				pcall(writefile, "dex/" .. name .. ".lua", body)
 				pcall(writefile, "dexscripts/" .. name .. ".lua", body)
 			else
-				warn("[Dex] Failed to fetch custom module '" .. name .. "': " .. tostring(body))
+				warn("[Dex] Failed to fetch custom module '" .. name .. "': " .. tostring(err))
+			end
+		end
+
+		for filename, url in pairs(RootDeps) do
+			local body, err = fetch(url)
+			if body then
+				pcall(writefile, filename, body)
+			else
+				warn("[Dex] Failed to fetch dependency '" .. filename .. "': " .. tostring(err))
 			end
 		end
 	end
