@@ -888,6 +888,7 @@ local function main()
 
 		context:AddRegistered("CUT")
 		context:AddRegistered("COPY")
+		context:AddRegistered("SHOW_XREFS")
 		context:AddRegistered("PASTE", emptyClipboard)
 		context:AddRegistered("DUPLICATE")
 		context:AddRegistered("DELETE")
@@ -907,7 +908,6 @@ local function main()
 
 		if expanded == Explorer.SearchExpanded then context:AddRegistered("CLEAR_SEARCH_AND_JUMP_TO") end
 		if env.setclipboard then context:AddRegistered("COPY_PATH") end
-		context:AddRegistered("SHOW_XREFS")
 		context:AddRegistered("INSERT_OBJECT")
 		context:AddRegistered("SAVE_INST")
 		context:AddRegistered("COPY_API_PAGE")
@@ -1355,6 +1355,7 @@ local function main()
 		end})]]
 
 		-- writing code like 2026's Judas 🔥🔥
+		-- made with love by Dave
 		context:Register("SHOW_XREFS",{Name = "Show xrefs", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function() 
 			local sList = selection.List
 			if #sList == 0 then return end
@@ -3192,7 +3193,7 @@ local function main()
 			end
 		end})
 
-		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()
+		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL TEST", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()
 			local sList = selection.List
 			if #sList == 1 then
 				env.setclipboard(
