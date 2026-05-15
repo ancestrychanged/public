@@ -1601,8 +1601,8 @@ local function main()
 
 			local mDepth = 4
 			local howmuch = 12000
-			local cDepth = 6
-			local cLimit = 32
+			local cDepth = 3
+			local cLimit = 16
 
 			local resultBuffer = {}
 			local resultSeen = {}
@@ -2515,7 +2515,7 @@ local function main()
 
 				table.sort(sortedBuf, function(a, b) return (a.BaseScore or 0) > (b.BaseScore or 0) end)
 				
-				local maxToProcess = math.min(resultCount, 30)
+				local maxToProcess = math.min(resultCount, 6)
 
 				for i = 1, maxToProcess do
 					local text, score, weakTable = buildRetentionChain(sortedBuf[i])
